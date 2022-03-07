@@ -1,2 +1,1 @@
-For access request of the MIMIC-III dataset, please visit [Requesting access
-](https://mimic.physionet.org/gettingstarted/access/).
+# This is the default folder for files exported by the Makefile

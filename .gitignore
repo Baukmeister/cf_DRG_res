@@ -106,3 +106,5 @@ venv.bak/
 .DS_Store
 .vscode/
 working_dir*/
+/mimic_data/
+/drg_preds_delete/

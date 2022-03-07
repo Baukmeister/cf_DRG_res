@@ -20,7 +20,14 @@ import src.data as data
 import src.models as models
 
 
+if torch.cuda.is_available():
 
+    print("Using GPU")
+    print(torch.cuda.get_device_name(0))
+
+else:
+
+    print("Not using GPU")
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--config",
@@ -39,6 +46,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 config = json.load(open(args.config, 'r'))
+
 
 working_dir = config['data']['working_dir']
 
@@ -154,7 +162,8 @@ for epoch in range(start_epoch, config['training']['epochs']):
 
     if current_loss <= lowest_loss:
         for ckpt_path in glob.glob(working_dir + '/model.*'):
-            os.system("rm %s" % ckpt_path)
+            os.remove(ckpt_path)
+            #os.system("rm %s" % ckpt_path)
         # replace with new checkpoint
         torch.save(model.state_dict(), working_dir + '/model.%s.ckpt' % epoch)
 

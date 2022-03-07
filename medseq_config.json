@@ -30,7 +30,7 @@
         "coexist_filename": "mimic_data/coexist_dict.pkl"
         },
     "model": {
-        "model_type": "delete",
+        "model_type": "delete_retrieve",
         "emb_dim": 128,
         "attention": false,
         "encoder": "lstm",

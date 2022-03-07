@@ -130,12 +130,12 @@ def read_nmt_data(src, config, tgt, attribute_vocab, train_src=None, train_tgt=N
         with open(attribute_vocab) as attr_file:
             next(attr_file) # skip header
             for line in attr_file:
-                parts = line.strip().split()
-                pre_salience = float(parts[-2])
-                post_salience = float(parts[-1])
-                attr = ' '.join(parts[:-2])
-                pre_attr[attr] = pre_salience
-                post_attr[attr] = post_salience
+                    parts = line.strip().split()
+                    pre_salience = float(parts[-2])
+                    post_salience = float(parts[-1])
+                    attr = ' '.join(parts[:-2])
+                    pre_attr[attr] = pre_salience
+                    post_attr[attr] = post_salience
     else:
         pre_attr = post_attr = set([x.strip() for x in open(attribute_vocab)])
 
