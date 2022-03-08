@@ -30,15 +30,10 @@ Please note that one need to request the access from MIMIC III and install the p
 
 ### Train DRG models
 
-Before actually running the training script, we need to generate n-gram attribute vocabulary list. First, we need to concatenate `train_pos.txt` and `train_neg.txt` into `train_all.txt`,
 
+Simply run:
 ```
-cat mimic_data/train_pos.txt mimic_data/train_neg.txt > mimic_data/train_all.txt
-```
-
-and then simply run:
-```
-python tools/make_vocab.py mimic_data/train_all.txt 3000 > mimic_data/vocab.txt
+python tools/make_vocab.py mimic_data/train_all.txt 3000 <Number of static features> > mimic_data/vocab.txt
 
 python tools/make_ngram_attribute_vocab.py mimic_data/vocab.txt mimic_data/train_neg.txt mimic_data/train_pos.txt 15 > mimic_data/ngram_attribute_vocab.txt
 ```

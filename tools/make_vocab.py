@@ -12,12 +12,15 @@ print('<pad>')
 print('<s>')
 print('</s>')
 
+file_path = sys.argv[1]
+most_common_num = int(sys.argv[2])
+static_feature_num = int(sys.argv[3])
 c = Counter()
-for l in open(sys.argv[1]):
-    for tok in l.strip().split():
+for l in open(file_path):
+    for tok in l.strip().split()[:-static_feature_num]:
         c[tok] += 1
 
-for tok, _ in c.most_common(int(sys.argv[2])):
+for tok, _ in c.most_common(most_common_num):
     print(tok)
 
 
