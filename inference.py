@@ -85,6 +85,7 @@ logging.info('...done!')
 
 src_vocab_size = len(src['tok2id'])
 tgt_vocab_size = len(tgt['tok2id'])
+
 if config['model']['add_diagnosis_layer'] != False:
     diag_vocab_size = len(src['diag_tok2id']) 
     pad_id_diag=src['diag_tok2id']['<pad>']

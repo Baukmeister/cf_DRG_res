@@ -8,7 +8,8 @@ import re
 def shorten_sequence(sequence):
     return [elem for i, elem in enumerate(sequence) if i == 0 or sequence[i - 1] != elem]
 
-def plot_sequence(sequence):
+
+def plot_sequence(sequence, title="Event plot"):
     G = nx.DiGraph()
     items_per_row = 6
 
@@ -16,7 +17,7 @@ def plot_sequence(sequence):
     nodes_with_labels = {i: l for i, l in enumerate(short_sequence)}
     nodes = nodes_with_labels.keys()
 
-    for node,label in nodes_with_labels.items():
+    for node, label in nodes_with_labels.items():
         nodes_with_labels[node] = (
             re.sub("(.{11})", "\\1-\n", label, 0, re.DOTALL).strip("1-\n")
         )
@@ -24,17 +25,23 @@ def plot_sequence(sequence):
     G.add_nodes_from(nodes)
 
     for idx in range(len(short_sequence)):
-        if idx != len(short_sequence)-1:
-            G.add_edge(idx, idx+1)
+        if idx != len(short_sequence) - 1:
+            G.add_edge(idx, idx + 1)
 
-    pos = dict(zip(nodes_with_labels.keys(), [[(v%items_per_row), 100-(int(v/items_per_row))] for v in range(len(short_sequence))]))
+    pos = dict(zip(nodes_with_labels.keys(),
+                   [[(v % items_per_row), 100 - (int(v / items_per_row))] for v in range(len(short_sequence))]))
 
-    plt.figure(figsize=(items_per_row*2.2, int(len(short_sequence)/items_per_row)*3),dpi=300)
+    plot_height = (int( ((len(short_sequence)-1)) / items_per_row )+1) * 5
+    plt.figure(figsize=(items_per_row * 3, plot_height), dpi=300)
+    plt.title(title, fontsize=40)
+    plt.tight_layout()
     nx.draw(
         G,
         pos=pos,
         labels=nodes_with_labels,
-        node_size=8000,
+        font_size=17,
+        font_weight="bold",
+        node_size=15000,
         arrows=True,
         node_color="skyblue",
         node_shape="s",

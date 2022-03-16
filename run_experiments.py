@@ -1,29 +1,44 @@
-from src.visualize import *
+import getpass
+import json
 
-raw_sequence = ['Pre-Admission Intake',
-                'Vancomycin',
-                'Lorazepam (Ativan)',
-                'Famotidine (Pepcid)',
-                'Vancomycin',
-                'Heparin Sodium (Prophylaxis)',
-                'Magnesium Sulfate',
-                'Magnesium Sulfate (Bolus)',
-                'Heparin Sodium (Prophylaxis)',
-                'Vancomycin',
-                'Famotidine (Pepcid)',
-                'Heparin Sodium (Prophylaxis)',
-                'Heparin Sodium',
-                'Heparin Sodium',
-                'Vancomycin',
-                'Heparin Sodium',
-                'Heparin Sodium',
-                'Vancomycin',
-                'Famotidine (Pepcid)',
-                'Heparin Sodium',
-                'Heparin Sodium',
-                'Vancomycin',
-                'Heparin Sodium',
-                'Heparin Sodium',
-                'Venous catheterization, not elsewhere classified']
+from src.notebook_code.data_preprocessing import preprocess_data
+from src.notebook_code.model_train_eval import train_and_eval_models
 
-plot_sequence(sequence=raw_sequence)
+if __name__ == "__main__":
+
+    # CONFIG
+    RUN_PREPROCESSING = False
+    DATA_OUT_FOLDER = "./processed_mimic_data"
+    DRG_MODEL_PATH = "./drg_models"
+    MODELS_TO_TRAIN = [
+        #'dynamic_lstm',
+        #'full_lstm',
+        'rf',
+        #'1-NN'
+    ]
+    MODELS_TO_EXPLAIN = 'rf'
+
+    personal_config = json.load(open("./personal_config.json"))
+    postgres_pw = personal_config['postgres_pw']
+
+    # NOTEBOOK 1
+    if RUN_PREPROCESSING:
+        print("Started Data Preprocessing step...")
+
+        preprocess_data(
+            postgres_pw=postgres_pw,
+            data_path=DATA_OUT_FOLDER
+        )
+        print("Data preprocessing done!")
+
+    # NOTEBOOK 2
+    print("Started model training and evaluation step...")
+    train_and_eval_models(
+        postgres_pw=postgres_pw,
+        data_path=DATA_OUT_FOLDER,
+        drg_model_path=DRG_MODEL_PATH,
+        models_to_train=MODELS_TO_TRAIN,
+        model_to_explain=MODELS_TO_EXPLAIN
+    )
+    print("Model training and evaluation step done!")
+
