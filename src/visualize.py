@@ -18,9 +18,11 @@ def plot_sequence(sequence, title="Event plot"):
     nodes = nodes_with_labels.keys()
 
     for node, label in nodes_with_labels.items():
-        nodes_with_labels[node] = (
-            re.sub("(.{11})", "\\1-\n", label, 0, re.DOTALL).strip("1-\n")
+        wrapped_text = (
+            re.sub("(.{10})", "\\1-\n", label, 0, re.DOTALL).strip("1-\n")
         )
+
+        nodes_with_labels[node] = wrapped_text if len(wrapped_text) < 60 else wrapped_text[:60] + "..."
 
     G.add_nodes_from(nodes)
 
@@ -31,7 +33,7 @@ def plot_sequence(sequence, title="Event plot"):
     pos = dict(zip(nodes_with_labels.keys(),
                    [[(v % items_per_row), 100 - (int(v / items_per_row))] for v in range(len(short_sequence))]))
 
-    plot_height = (int( ((len(short_sequence)-1)) / items_per_row )+1) * 5
+    plot_height = (int(((len(short_sequence) - 1)) / items_per_row) + 1) * 5
     plt.figure(figsize=(items_per_row * 3, plot_height), dpi=300)
     plt.title(title, fontsize=40)
     plt.tight_layout()
