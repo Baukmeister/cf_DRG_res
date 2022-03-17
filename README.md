@@ -33,9 +33,9 @@ Please note that one need to request the access from MIMIC III and install the p
 
 Simply run:
 ```
-python tools/make_vocab.py mimic_data/train_all.txt 3000 <Number of static features> > mimic_data/vocab.txt
+python tools/make_vocab.py processed_mimic_data/train_all.txt 3000 > .\processed_mimic_data/vocab.txt    
 
-python tools/make_ngram_attribute_vocab.py mimic_data/vocab.txt mimic_data/train_neg.txt mimic_data/train_pos.txt 15 > mimic_data/ngram_attribute_vocab.txt
+python .\tools\make_ngram_attribute_vocab.py .\processed_mimic_data\vocab.txt .\processed_mimic_data\train_neg.txt .\processed_mimic_data\train_pos.txt 15 > .\processed_mimic_data\ngram_attribute_vocab.txt
 ```
 
 After that, we run the training script: 

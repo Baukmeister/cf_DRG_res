@@ -36,6 +36,7 @@ import matplotlib.pyplot as plt
 
 from src.visualize import plot_sequence
 
+
 def train_and_eval_models(
         postgres_pw,
         data_path,
@@ -43,11 +44,7 @@ def train_and_eval_models(
         models_to_train,
         model_to_explain
 ):
-
-
     tf.test.is_gpu_available()
-
-
 
     train_pos = pd.read_csv(f"{data_path}/train_pos.txt")
     train_neg = pd.read_csv(f"{data_path}/train_neg.txt")
@@ -65,9 +62,6 @@ def train_and_eval_models(
         'first_icu_stay'
     ]
 
-    train_neg['events'] = train_neg['drug_events'] + " " + train_neg['procedure_codes']
-    train_pos['events'] = train_pos['drug_events'] + " " + train_pos['procedure_codes']
-
     train = pd.concat([train_pos, train_neg]).reset_index()[['survival', 'events'] + static_feature_names].dropna()
     train_reordered = train.sample(frac=1, random_state=3)
 
@@ -77,10 +71,6 @@ def train_and_eval_models(
     X_train_events, X_train_static, y_train = train_reordered['events'], train_reordered[static_feature_names], \
                                               train_reordered['survival']
 
-    static_feature_names
-
-    X_train_static
-
     validation_pos = pd.read_csv(f"{data_path}/validation_pos.txt")
     validation_neg = pd.read_csv(f"{data_path}/validation_neg.txt")
 
@@ -89,8 +79,6 @@ def train_and_eval_models(
 
     validation_neg['events'] = validation_neg['drug_events'] + " " + validation_neg['procedure_codes']
     validation_pos['events'] = validation_pos['drug_events'] + " " + validation_pos['procedure_codes']
-
-    validation_pos
 
     train_neg['events'] = train_neg['drug_events'] + " " + train_neg['procedure_codes']
     train_pos['events'] = train_pos['drug_events'] + " " + train_pos['procedure_codes']
@@ -119,12 +107,6 @@ def train_and_eval_models(
 
     X_train_padded = sequence.pad_sequences(X_train_sequences, maxlen=max_seq_length, padding='post')
     X_val_padded = sequence.pad_sequences(X_val_sequences, maxlen=max_seq_length, padding='post')
-
-    X_train_padded.shape
-
-    X_val_padded.shape
-
-    X_val_padded
 
     def plot_graphs(history, string):
         plt.plot(history.history[string])
@@ -299,11 +281,7 @@ def train_and_eval_models(
     X_pred_negative = X_val_padded[y_pred == 0]
     X_pred_negative_static = X_val_static[y_pred == 0]
 
-    X_pred_negative.shape
-
     original_event_sequences = tokenizer.sequences_to_texts(X_pred_negative)
-
-    original_event_sequences[:5]
 
     pd.DataFrame(original_event_sequences).to_csv(path_or_buf=f'{data_path}/test_neg.txt', index=False, header=False,
                                                   sep=' ', quoting=csv.QUOTE_NONE, escapechar=' ')
@@ -329,8 +307,6 @@ def train_and_eval_models(
     closest = nn_model.kneighbors(X_pred_negative, return_distance=False)
     trans_results_nn = X_target_label[closest[:, 0]]
 
-    trans_results_nn[0]
-
     X_cf_one_nn = trans_results_nn
 
     trans_event_delete = tokenizer.sequences_to_texts(X_cf_delete_padded)
@@ -346,10 +322,6 @@ def train_and_eval_models(
     else:
         fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size
     print(round(fraction_success, 4))
-
-    model_to_explain == 'full_lstm'
-
-    X_cf_one_nn
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(
@@ -377,8 +349,6 @@ def train_and_eval_models(
 
     validation_size = X_val_padded.shape[0]
     outlier_score_val = n_error_val / validation_size
-
-    outlier_score_val
 
     y_pred_test = clf.predict(X_cf_delete_padded)
     n_error_test = y_pred_test[y_pred_test == -1].size
