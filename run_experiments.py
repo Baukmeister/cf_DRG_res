@@ -7,18 +7,19 @@ from src.notebook_code.model_train_eval import train_and_eval_models
 if __name__ == "__main__":
 
     # CONFIG
-    RUN_PREPROCESSING = True
-    TRAIN_AND_EVAL_MODELS = False
+    RUN_PREPROCESSING = False
+    TRAIN_AND_EVAL_MODELS = True
 
     DATA_OUT_FOLDER = "./processed_mimic_data"
     DRG_MODEL_PATH = "./drg_models"
     MODELS_TO_TRAIN = [
-        #'dynamic_lstm',
+        'dynamic_lstm',
         #'full_lstm',
         'rf',
         #'1-NN'
     ]
-    MODELS_TO_EXPLAIN = 'rf'
+    MODELS_TO_EXPLAIN = 'dynamic_lstm'
+    RESULTS_PATH = "./results"
 
     personal_config = json.load(open("./personal_config.json"))
     postgres_pw = personal_config['postgres_pw']
@@ -41,7 +42,8 @@ if __name__ == "__main__":
             data_path=DATA_OUT_FOLDER,
             drg_model_path=DRG_MODEL_PATH,
             models_to_train=MODELS_TO_TRAIN,
-            model_to_explain=MODELS_TO_EXPLAIN
+            model_to_explain=MODELS_TO_EXPLAIN,
+            results_path=RESULTS_PATH
         )
         print("Model training and evaluation step done!")
 

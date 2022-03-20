@@ -9,7 +9,7 @@ def shorten_sequence(sequence):
     return [elem for i, elem in enumerate(sequence) if i == 0 or sequence[i - 1] != elem]
 
 
-def plot_sequence(sequence, title="Event plot"):
+def plot_sequence(sequence, title="Event plot", output_folder=None):
     G = nx.DiGraph()
     items_per_row = 6
 
@@ -50,3 +50,5 @@ def plot_sequence(sequence, title="Event plot"):
         linewidths=5
     )
     plt.show()
+    if output_folder:
+        plt.savefig(f"{output_folder}/{title}.png")

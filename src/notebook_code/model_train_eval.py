@@ -1,12 +1,11 @@
+from datetime import datetime
 import os
 import csv
-
 import pandas as pd
 import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-
 import keras
 import tensorflow as tf
 import random as python_random
@@ -25,15 +24,11 @@ import math
 from sklearn import preprocessing
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
-
 from keras import backend as K
-
 import pandas.io.sql as sqlio
 import psycopg2
 import getpass
-
 import matplotlib.pyplot as plt
-
 from src.visualize import plot_sequence
 
 
@@ -42,7 +37,8 @@ def train_and_eval_models(
         data_path,
         drg_model_path,
         models_to_train,
-        model_to_explain
+        model_to_explain,
+        results_path
 ):
     tf.test.is_gpu_available()
 
@@ -62,6 +58,9 @@ def train_and_eval_models(
         'first_icu_stay'
     ]
 
+    result_df = pd.DataFrame(columns=["metric", "value"])
+
+
     train = pd.concat([train_pos, train_neg]).reset_index()[['survival', 'events'] + static_feature_names].dropna()
     train_reordered = train.sample(frac=1, random_state=3)
 
@@ -77,11 +76,11 @@ def train_and_eval_models(
     validation_pos['survival'] = [1 for i in range(validation_pos.shape[0])]
     validation_neg['survival'] = [0 for i in range(validation_neg.shape[0])]
 
-    validation_neg['events'] = validation_neg['drug_events'] + " " + validation_neg['procedure_codes']
-    validation_pos['events'] = validation_pos['drug_events'] + " " + validation_pos['procedure_codes']
-
-    train_neg['events'] = train_neg['drug_events'] + " " + train_neg['procedure_codes']
-    train_pos['events'] = train_pos['drug_events'] + " " + train_pos['procedure_codes']
+    #    validation_neg['events'] = validation_neg['drug_events'] + " " + validation_neg['procedure_codes']
+    #    validation_pos['events'] = validation_pos['drug_events'] + " " + validation_pos['procedure_codes']
+    #
+    #    train_neg['events'] = train_neg['drug_events'] + " " + train_neg['procedure_codes']
+    #    train_pos['events'] = train_pos['drug_events'] + " " + train_pos['procedure_codes']
 
     validation = pd.concat([validation_pos, validation_neg]).reset_index()
     validation_reordered = validation.sample(frac=1, random_state=3)
@@ -313,7 +312,7 @@ def train_and_eval_models(
     trans_event_delete_retrieve = tokenizer.sequences_to_texts(X_cf_delete_retrieve_padded)
     trans_event_one_nn = tokenizer.sequences_to_texts(X_cf_one_nn)
 
-    test_size = X_pred_negative.shape[0]
+    test_size = X_val_neg_static.shape[0]
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(model.predict([X_cf_delete_padded, X_val_neg_static]) > 0.5) / test_size
@@ -322,6 +321,14 @@ def train_and_eval_models(
     else:
         fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size
     print(round(fraction_success, 4))
+
+    result_df.append(
+        {
+            'metric': 'frac_delete',
+            'value': fraction_success
+        },
+        ignore_index=True
+    )
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(
@@ -332,6 +339,14 @@ def train_and_eval_models(
         fraction_success = np.sum(model.predict(X_cf_delete_retrieve_padded) > 0.5) / test_size
     print(round(fraction_success, 4))
 
+    result_df = result_df.append(
+        {
+            'metric': 'frac_delete_retrieve',
+            'value': fraction_success,
+        },
+        ignore_index=True,
+    )
+
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(model.predict([X_cf_one_nn, X_pred_negative_static]) > 0.5) / test_size
     elif model_to_explain == "rf":
@@ -339,6 +354,14 @@ def train_and_eval_models(
     else:
         fraction_success = np.sum(model.predict(X_cf_one_nn) > 0.5) / test_size
     print(round(fraction_success, 4))
+
+    result_df.append(
+        {
+            'metric': 'frac_one_nn',
+            'value': fraction_success
+        },
+        ignore_index=True
+    )
 
     clf = LocalOutlierFactor(n_neighbors=20, novelty=True, contamination=0.1)
     clf.fit(X_train_padded)
@@ -353,20 +376,45 @@ def train_and_eval_models(
     y_pred_test = clf.predict(X_cf_delete_padded)
     n_error_test = y_pred_test[y_pred_test == -1].size
 
-    outlier_score_test = n_error_test / test_size
-    print(round(outlier_score_test, 4))
+    outlier_score_delete = n_error_test / test_size
+    print(round(outlier_score_delete, 4))
 
+    result_df = result_df.append(
+        {
+            'metric': 'lof_delete',
+            'value': outlier_score_delete
+        },
+        ignore_index=True
+    )
     y_pred_test2 = clf.predict(X_cf_delete_retrieve_padded)
     n_error_test2 = y_pred_test2[y_pred_test2 == -1].size
 
-    outlier_score_test2 = n_error_test2 / test_size
-    print(round(outlier_score_test2, 4))
+    outlier_score_delete_retrieve = n_error_test2 / test_size
+    print(round(outlier_score_delete_retrieve, 4))
+
+    result_df = result_df.append(
+        {
+            'metric': 'lof_delete_retrieve',
+            'value': outlier_score_delete_retrieve
+        },
+        ignore_index=True
+    )
 
     y_pred_test3 = clf.predict(X_cf_one_nn)
     n_error_test3 = y_pred_test3[y_pred_test3 == -1].size
 
-    outlier_score_test3 = n_error_test3 / test_size
-    print(round(outlier_score_test3, 4))
+    outlier_score_one_nn = n_error_test3 / test_size
+    print(round(outlier_score_one_nn, 4))
+
+    result_df = result_df.append(
+        {
+            'metric': 'lof_one_nn',
+            'value': outlier_score_one_nn
+        },
+        ignore_index=True
+    )
+
+
 
     chencherry = SmoothingFunction()
 
@@ -381,31 +429,56 @@ def train_and_eval_models(
 
         return results
 
-    pairwise_bleu = get_pairwise_bleu(original_event_sequences, trans_event_delete)
-    avg_bleu = sum(pairwise_bleu) / test_size
-    print(round(avg_bleu, 4))
+    pairwise_bleu_delete = get_pairwise_bleu(original_event_sequences, trans_event_delete)
+    avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
+    print(round(avg_bleu_delete, 4))
 
-    pairwise_bleu2 = get_pairwise_bleu(original_event_sequences, trans_event_delete_retrieve)
-    avg_bleu2 = sum(pairwise_bleu2) / test_size
-    print(round(avg_bleu2, 4))
+    result_df = result_df.append(
+        {
+            'metric': 'avg_bleu_delete',
+            'value': avg_bleu_delete
+        },
+        ignore_index=True
+    )
 
-    pairwise_bleu3 = get_pairwise_bleu(original_event_sequences, trans_event_one_nn)
-    avg_bleu3 = sum(pairwise_bleu3) / test_size
-    print(round(avg_bleu3, 4))
+    pairwise_bleu_delete_retrieve = get_pairwise_bleu(original_event_sequences, trans_event_delete_retrieve)
+    avg_bleu_delete_retrieve = sum(pairwise_bleu_delete_retrieve) / test_size
+    print(round(avg_bleu_delete_retrieve, 4))
+
+    result_df = result_df.append(
+        {
+            'metric': 'avg_bleu_delete_retrieve',
+            'value': avg_bleu_delete_retrieve
+        },
+        ignore_index=True
+    )
+
+    pariwise_bleu_one_nn = get_pairwise_bleu(original_event_sequences, trans_event_one_nn)
+    avg_bleu_one_nn = sum(pariwise_bleu_one_nn) / test_size
+    print(round(avg_bleu_one_nn, 4))
+
+    result_df = result_df.append(
+        {
+            'metric': 'avg_bleu_one_nn',
+            'value': avg_bleu_one_nn
+        },
+        ignore_index=True
+    )
+
 
     fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 4))
 
     plt.sca(ax[0])
     plt.title('DeleteOnly, BLUE score')
-    plt.hist(pairwise_bleu, density=True, bins=30)
+    plt.hist(pairwise_bleu_delete, density=True, bins=30)
 
     plt.sca(ax[1])
     plt.title('DeleteAndRetrieve, BLUE score')
-    plt.hist(pairwise_bleu2, density=True, bins=30)
+    plt.hist(pairwise_bleu_delete_retrieve, density=True, bins=30)
 
     plt.sca(ax[2])
     plt.title('1-NN, BLUE score')
-    plt.hist(pairwise_bleu3, density=True, bins=30)
+    plt.hist(pariwise_bleu_one_nn, density=True, bins=30)
 
     plt.show()
 
@@ -491,7 +564,6 @@ def train_and_eval_models(
         """, conn)
 
     itemid_to_name = itemid_to_name[itemid_to_name['itemid'] >= 220000]
-    itemid_to_name.head()
 
     itemid_to_name2 = pd.read_sql(
         """
@@ -502,7 +574,8 @@ def train_and_eval_models(
     itemid_to_name2.head()
 
     itemid_to_name2 = itemid_to_name2.rename(
-        columns={'icd9_code': 'itemid', 'short_title': 'abbreviation', 'long_title': 'label'})
+        columns={'icd9_code': 'itemid', 'short_title': 'abbreviation', 'long_title': 'label'}
+    )
 
     itemid_to_name_concat = pd.concat([itemid_to_name, itemid_to_name2])
 
@@ -519,32 +592,41 @@ def train_and_eval_models(
 
         return temp_list
 
-    sample_id = 44
+    ## EXPORT
+    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}"
+    os.mkdir(output_folder)
+    result_df.to_csv(f"{output_folder}/CF_metrics.csv")
+
+    sample_id = 2
 
     code_to_name(original_event_sequences[sample_id])
 
     plot_sequence(
         code_to_name(original_event_sequences[sample_id]),
-        title="Original Sequence"
+        title=f"{model_to_explain} - Original Sequence",
+        output_folder=output_folder
     )
 
     code_to_name(trans_event_delete[sample_id])
 
     plot_sequence(
         code_to_name(trans_event_delete[sample_id]),
-        title="DRG: DELETE Sequence"
+        title=f"{model_to_explain} - DRG: DELETE Sequence",
+        output_folder=output_folder
     )
 
     code_to_name(trans_event_delete_retrieve[sample_id])
 
     plot_sequence(
         code_to_name(trans_event_delete_retrieve[sample_id]),
-        title="DRG: DELETE-RETRIEVE Sequence"
+        title=f"{model_to_explain} - DRG: DELETE-RETRIEVE Sequence",
+        output_folder=output_folder
     )
 
     code_to_name(trans_event_one_nn[sample_id])
 
     plot_sequence(
         code_to_name(trans_event_one_nn[sample_id]),
-        title="1-NN Sequence"
+        title=f"{model_to_explain} - 1-NN Sequence",
+        output_folder=output_folder
     )
