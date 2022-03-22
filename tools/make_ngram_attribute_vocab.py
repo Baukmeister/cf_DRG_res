@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 import numpy as np
 from nltk import ngrams
 from tqdm import tqdm
+import pandas as pd
 
 class NgramSalienceCalculator(object):
     def __init__(self, pre_corpus, post_corpus, tokenize):
@@ -42,18 +43,17 @@ class NgramSalienceCalculator(object):
         else:
             return (post_count + lmbda) / (pre_count + lmbda)
 
+
+vocab_file = sys.argv[1]
+neg_corpus_file = sys.argv[2]
+pos_corpus_file = sys.argv[3]
+saliency_ratio = int(sys.argv[4])
+
 # create a set of all words in the vocab
-vocab = set([w.strip() for i, w in enumerate(open(sys.argv[1]))])
+vocab = set([w.strip() for w in open(vocab_file)])
 
-corpus1_sentences = [
-    l.strip().split()
-    for l in open(sys.argv[2])
-]
-
-corpus2_sentences = [
-    l.strip().split()
-    for l in open(sys.argv[3])
-]
+neg_corpus_raw = list(pd.read_csv(neg_corpus_file)["events"])
+pos_corpus_raw = list(pd.read_csv(pos_corpus_file)["events"])
 
 def tokenize(text):
     text = text.split()
@@ -67,7 +67,6 @@ def tokenize(text):
     return grams
 
 # the salience ratio
-r = float(sys.argv[4])
 
 def unk_corpus(sentences):
     corpus = []
@@ -75,16 +74,16 @@ def unk_corpus(sentences):
         # unk the sentence according to the vocab
         line = [
             w if w in vocab else '<unk>'
-            for w in line
+            for w in line.split()
         ]
         corpus.append(' '.join(line))
     return corpus
 
 
-corpus1 = unk_corpus(corpus1_sentences)
-corpus2 = unk_corpus(corpus2_sentences)
+corpus_neg = unk_corpus(neg_corpus_raw)
+corpus_pos = unk_corpus(pos_corpus_raw)
 
-sc = NgramSalienceCalculator(corpus1, corpus2, tokenize)
+sc = NgramSalienceCalculator(corpus_neg, corpus_pos, tokenize)
 
 print("marker", "negative_score", "positive_score")
 def calculate_attribute_markers(corpus):
@@ -98,10 +97,10 @@ def calculate_attribute_markers(corpus):
             for gram in joined:
                 negative_salience = sc.salience(gram, attribute='pre')
                 positive_salience = sc.salience(gram, attribute='post')
-                if max(negative_salience, positive_salience) > r:
+                if max(negative_salience, positive_salience) > saliency_ratio:
                     print(gram, negative_salience, positive_salience)
                     # print(gram)
 
 
-calculate_attribute_markers(corpus1)
-calculate_attribute_markers(corpus2)
+calculate_attribute_markers(corpus_neg)
+calculate_attribute_markers(corpus_pos)

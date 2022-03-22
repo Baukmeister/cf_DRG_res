@@ -49,6 +49,8 @@ def plot_sequence(sequence, title="Event plot", output_folder=None):
         node_shape="s",
         linewidths=5
     )
-    plt.show()
+
     if output_folder:
         plt.savefig(f"{output_folder}/{title}.png")
+    else:
+        plt.show()

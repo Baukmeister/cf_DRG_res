@@ -48,6 +48,10 @@ def train_and_eval_models(
     train_pos['survival'] = [1 for i in range(train_pos.shape[0])]
     train_neg['survival'] = [0 for i in range(train_neg.shape[0])]
 
+
+    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}"
+    os.mkdir(output_folder)
+
     static_feature_names = [
         'gender',
         'age',
@@ -107,13 +111,15 @@ def train_and_eval_models(
     X_train_padded = sequence.pad_sequences(X_train_sequences, maxlen=max_seq_length, padding='post')
     X_val_padded = sequence.pad_sequences(X_val_sequences, maxlen=max_seq_length, padding='post')
 
-    def plot_graphs(history, string):
-        plt.plot(history.history[string])
-        plt.plot(history.history['val_' + string])
+    def plot_graphs(history, metric, title):
+        plt.clf()
+        plt.plot(history.history[metric])
+        plt.plot(history.history['val_' + metric])
         plt.xlabel("Epochs")
-        plt.ylabel(string)
-        plt.legend([string, 'val_' + string])
-        plt.show()
+        plt.ylabel(metric)
+        plt.legend([metric, 'val_' + metric])
+        plt.title(f"Training performance for {title}")
+        plt.savefig(f"{output_folder}/training_performance-{model_to_explain}_{metric}.png")
 
     def eval_model_preds(preds, reference):
 
@@ -190,8 +196,8 @@ def train_and_eval_models(
             callbacks=[early_stopping]
         )
 
-        plot_graphs(model_history, "accuracy")
-        plot_graphs(model_history, "loss")
+        plot_graphs(model_history, "accuracy", 'dynamic_lstm')
+        plot_graphs(model_history, "loss", 'dynamic_lstm')
 
         dynamic_lstm_pred = np.array([1 if pred > 0.5 else 0 for pred in dynamic_lstm_model.predict(X_val_padded)])
         eval_model_preds(dynamic_lstm_pred, y_val)
@@ -254,8 +260,8 @@ def train_and_eval_models(
             callbacks=early_stopping
         )
 
-        plot_graphs(full_lstm_hist, "accuracy")
-        plot_graphs(full_lstm_hist, "loss")
+        plot_graphs(full_lstm_hist, "accuracy", 'full_lstm')
+        plot_graphs(full_lstm_hist, "loss", 'full_lstm')
 
         full_lstm_pred = np.array(
             [1 if pred > 0.5 else 0 for pred in full_lstm_model.predict([X_val_padded, X_val_static])])
@@ -322,7 +328,7 @@ def train_and_eval_models(
         fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size
     print(round(fraction_success, 4))
 
-    result_df.append(
+    result_df = result_df.append(
         {
             'metric': 'frac_delete',
             'value': fraction_success
@@ -355,7 +361,7 @@ def train_and_eval_models(
         fraction_success = np.sum(model.predict(X_cf_one_nn) > 0.5) / test_size
     print(round(fraction_success, 4))
 
-    result_df.append(
+    result_df = result_df.append(
         {
             'metric': 'frac_one_nn',
             'value': fraction_success
@@ -480,7 +486,7 @@ def train_and_eval_models(
     plt.title('1-NN, BLUE score')
     plt.hist(pariwise_bleu_one_nn, density=True, bins=30)
 
-    plt.show()
+    plt.savefig(f"{output_folder}/histograms_{model_to_explain}.png")
 
     original_counts = pd.DataFrame(columns=['total', 'drug', 'procedure'])
 
@@ -547,7 +553,7 @@ def train_and_eval_models(
     plt.title('1-NN, procedure difference')
     plt.hist(substracted_one_nn['procedure'], density=True, bins=12)
 
-    plt.show()
+    plt.savefig(f"{output_folder}/difference_plot-{model_to_explain}.png")
 
     conn = psycopg2.connect(
         database="mimic",
@@ -593,8 +599,6 @@ def train_and_eval_models(
         return temp_list
 
     ## EXPORT
-    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}"
-    os.mkdir(output_folder)
     result_df.to_csv(f"{output_folder}/CF_metrics.csv")
 
     sample_id = 2
@@ -611,7 +615,7 @@ def train_and_eval_models(
 
     plot_sequence(
         code_to_name(trans_event_delete[sample_id]),
-        title=f"{model_to_explain} - DRG: DELETE Sequence",
+        title=f"{model_to_explain}-DRG-DELETE_Sequence",
         output_folder=output_folder
     )
 
@@ -619,7 +623,7 @@ def train_and_eval_models(
 
     plot_sequence(
         code_to_name(trans_event_delete_retrieve[sample_id]),
-        title=f"{model_to_explain} - DRG: DELETE-RETRIEVE Sequence",
+        title=f"{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
         output_folder=output_folder
     )
 
@@ -627,6 +631,6 @@ def train_and_eval_models(
 
     plot_sequence(
         code_to_name(trans_event_one_nn[sample_id]),
-        title=f"{model_to_explain} - 1-NN Sequence",
+        title=f"{model_to_explain}-1-NN_Sequence",
         output_folder=output_folder
     )
