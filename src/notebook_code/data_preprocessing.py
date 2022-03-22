@@ -62,9 +62,7 @@ def preprocess_data(postgres_pw, data_path):
         ON a.subject_id=last_admission_time.subject_id;
         """, conn)
 
-
     admissions_last_year = admissions_diff[admissions_diff['diff_from_last'] >= -1]
-
 
     hadm_id_set = set(admissions_last_year['hadm_id'])
 
@@ -80,7 +78,6 @@ def preprocess_data(postgres_pw, data_path):
 
     drug_events_filtered = drug_events_last_year[drug_events_last_year['subject_id'].isin(heart_disease_id_set)]
 
-
     drug_events_filtered2 = drug_events_filtered.drop_duplicates()
 
     itemid_counts = drug_events_filtered2['itemid'].value_counts()
@@ -90,24 +87,18 @@ def preprocess_data(postgres_pw, data_path):
 
     itemid_counts2['proportion'] = itemid_counts2['counts'] / sum(itemid_counts2['counts'])
 
-
     itemid_counts3 = itemid_counts2[(itemid_counts2['proportion'] <= 0.041) & (itemid_counts2['counts'] >= 5)]
 
     itemid_set = set(itemid_counts3['itemid'])
 
     drug_events_filtered3 = drug_events_filtered2[drug_events_filtered2['itemid'].isin(itemid_set)]
 
-
-
     drug_events_only = drug_events_filtered3.groupby(by='subject_id').apply(lambda x: x.sort_values('starttime'))[
         'itemid'].reset_index(level=[1], drop=True)
-
 
     drug_events_by_patient = drug_events_only.groupby(by='subject_id').apply(list)
 
     drug_events_by_patient2 = drug_events_by_patient.reset_index()
-
-
 
     drug_events_by_patient2['count'] = [len(events) for events in drug_events_by_patient2['itemid']]
 
@@ -115,7 +106,6 @@ def preprocess_data(postgres_pw, data_path):
 
     drug_events_by_patient3 = drug_events_by_patient2[
         drug_events_by_patient2['count'].apply(lambda x: True if x >= 3 and x <= 50 else False)]
-
 
     procedure_codes = pd.read_sql(
         """
@@ -129,26 +119,21 @@ def preprocess_data(postgres_pw, data_path):
         ON a.hadm_id=procedures.hadm_id;
         """, conn)
 
-
     procedure_codes_last_year = procedure_codes[procedure_codes['hadm_id'].isin(hadm_id_set)]
 
     procedure_codes_filtered = procedure_codes_last_year[
         procedure_codes_last_year['subject_id'].isin(heart_disease_id_set)]
-
 
     procedure_codes_filtered2 = procedure_codes_filtered.drop(['short_title', 'hadm_id'], axis=1)
 
     procedure_codes_filtered3 = procedure_codes_filtered2.groupby(by='subject_id').apply(
         lambda x: x.sort_values(['admittime', 'seq_num']))
 
-
     procedure_codes_filtered4 = procedure_codes_filtered3.reset_index(level=[0, 1], drop=True)
-
 
     procedures_by_patient = procedure_codes_filtered4.groupby(by='subject_id', axis=0)['icd9_code'].apply(list)
 
     procedures_by_patient2 = procedures_by_patient.reset_index()
-
 
     procedures_by_patient2['count'] = [len(codes) for codes in procedures_by_patient2['icd9_code']]
 
@@ -169,8 +154,6 @@ def preprocess_data(postgres_pw, data_path):
     drug_events_procedures_merged4 = drug_events_procedures_merged3.rename(
         columns={"icd9_code": "procedure_codes", "itemid": "drug_events"})
 
-
-
     survival_subject_ids = pd.read_sql(
         """
         SELECT subject_id FROM patients
@@ -181,7 +164,6 @@ def preprocess_data(postgres_pw, data_path):
 
     drug_events_procedures_merged4['survival'] = [1 if idx in survival_id_set else 0 for idx in
                                                   drug_events_procedures_merged4['subject_id']]
-
 
     patients = pd.read_sql(
         """
@@ -294,7 +276,6 @@ def preprocess_data(postgres_pw, data_path):
     final_merged['events'] = final_merged['drug_events'] + " " + final_merged['procedure_codes']
     final_merged.drop(columns=['subject_id', 'drug_events', 'procedure_codes'], inplace=True)
 
-
     neg_data = final_merged[final_merged['survival'] == 0].drop(columns=['survival'])
     pos_data = final_merged[final_merged['survival'] == 1].drop(columns=['survival'])
 
@@ -312,3 +293,12 @@ def preprocess_data(postgres_pw, data_path):
 
     train_all = pd.concat([train_pos, train_neg])
     train_all.to_csv(path_or_buf=f'./{data_path}/train_all.txt', index=False)
+
+    # store pure event sequences for DRG framework
+    train_neg["events"].to_csv(path_or_buf=f'./{data_path}/train_neg_events.txt', index=False, header=False)
+    validation_neg["events"].to_csv(path_or_buf=f'./{data_path}/validation_neg_events.txt', index=False, header=False)
+
+    train_pos["events"].to_csv(path_or_buf=f'./{data_path}/train_pos_events.txt', index=False, header=False)
+    validation_pos["events"].to_csv(path_or_buf=f'./{data_path}/validation_pos_events.txt', index=False, header=False)
+
+    train_all["events"].to_csv(path_or_buf=f'./{data_path}/train_all_events.txt', index=False, header=False)

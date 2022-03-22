@@ -54,3 +54,5 @@ def plot_sequence(sequence, title="Event plot", output_folder=None):
         plt.savefig(f"{output_folder}/{title}.png")
     else:
         plt.show()
+
+    plt.close()

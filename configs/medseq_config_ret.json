@@ -9,10 +9,10 @@
         "random_seed": 1
     },
     "data": {
-        "src": "processed_mimic_data/train_neg.txt",
-        "tgt": "processed_mimic_data/train_pos.txt",
-        "src_test": "processed_mimic_data/validation_neg.txt",
-        "tgt_test": "processed_mimic_data/validation_pos.txt",
+        "src": "processed_mimic_data/train_neg_events.txt",
+        "tgt": "processed_mimic_data/train_pos_events.txt",
+        "src_test": "processed_mimic_data/validation_neg_events.txt",
+        "tgt_test": "processed_mimic_data/validation_pos_events.txt",
         "src_vocab": "processed_mimic_data/vocab.txt",
         "tgt_vocab": "processed_mimic_data/vocab.txt",
         "share_vocab": true,

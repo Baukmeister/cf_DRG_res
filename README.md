@@ -53,9 +53,9 @@ For the DeleteAndRetrieve model (*Alg. 1* with *r=True*), we simply need to chan
 There is an inference script that we can apply the trained model to do extra inferences with a new test dataset. We can modify `src_test` parameters in the config file (we can ignore the `tgt_test` parameter since there is no target dataset at inference time).
 
 ```
-python inference.py --config medseq_config.json --checkpoint working_dir_delete/$checkpoint_file$
+python inference.py --config configs/medseq_config_del.json --checkpoint working_dir_delete/$checkpoint_file$
 
-python inference.py --config medseq_config.json --checkpoint working_dir_delete_retrieve/$checkpoint_file$
+python inference.py --config configs/medseq_config_ret.json --checkpoint working_dir_delete_retrieve/$checkpoint_file$
 ```
 
 MIMIC-III demo data: https://physionet.org/content/mimiciii-demo/1.4/. 
