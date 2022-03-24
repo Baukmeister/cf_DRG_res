@@ -285,6 +285,9 @@ def preprocess_data(postgres_pw, data_path):
 
     print("Merging all of the data ...")
 
+    # TODO:
+    # Use TDIF to extract features from the diagnoses codes
+
     patients['age'] = pd.to_numeric([95 if age >= 300 else age for age in patients['age']])
     patients['gender'], _ = pd.factorize(patients['gender'])
     patients['ethnicity'], _ = pd.factorize(patients['ethnicity'])
