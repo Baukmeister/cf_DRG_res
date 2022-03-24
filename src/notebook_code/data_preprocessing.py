@@ -9,6 +9,7 @@ def preprocess_data(postgres_pw, data_path):
         host="127.0.0.1",
         port="5432",
         options=f'-c search_path=mimiciii')
+    cur = conn.cursor()
 
     """
     lists of ICD 9 codes (related to heart diseases):
@@ -18,36 +19,17 @@ def preprocess_data(postgres_pw, data_path):
     420-429  Other Forms Of Heart Disease
     """
 
-    heart_disease_subject_ids = pd.read_sql(
+    print("Getting relevant subjects and their diagnoses ...")
+    subjects_and_diagnoses = pd.read_sql(
         """
-        SELECT DISTINCT(subject_id)
-        FROM diagnoses_icd
-        --WHERE (
-        --    icd9_code LIKE '393%' OR
-        --    icd9_code LIKE '394%' OR
-        --    icd9_code LIKE '395%' OR
-        --    icd9_code LIKE '396%' OR
-        --    icd9_code LIKE '397%' OR
-        --    icd9_code LIKE '398%' OR
-        --    icd9_code LIKE '410%' OR
-        --    icd9_code LIKE '411%' OR
-        --    icd9_code LIKE '412%' OR
-        --    icd9_code LIKE '413%' OR
-        --    icd9_code LIKE '414%' OR
-        --    icd9_code LIKE '420%' OR
-        --    icd9_code LIKE '421%' OR
-        --    icd9_code LIKE '422%' OR
-        --    icd9_code LIKE '423%' OR
-        --    icd9_code LIKE '424%' OR
-        --    icd9_code LIKE '425%' OR
-        --    icd9_code LIKE '426%' OR
-        --    icd9_code LIKE '427%' OR
-        --    icd9_code LIKE '428%' OR
-        --    icd9_code LIKE '429%' 
-        --);
+        select subject_id, string_agg(icd9_code, ',') AS diagnoses
+        from diagnoses_icd 
+        group by subject_id;
         """, conn)
 
-    heart_disease_id_set = set(heart_disease_subject_ids['subject_id'])
+    patient_ids = set(subjects_and_diagnoses['subject_id'])
+
+    print("Getting relevant admission events ...")
 
     admissions_diff = pd.read_sql(
         """
@@ -66,17 +48,34 @@ def preprocess_data(postgres_pw, data_path):
 
     hadm_id_set = set(admissions_last_year['hadm_id'])
 
+    print("Getting relevant drug events ...")
+    view_name = 'drug_event_view'
+    drug_view_exists = pd.read_sql(
+        f"select exists(select * from pg_views where viewname = '{view_name}');",
+        conn)['exists'][0]
+
+    if not drug_view_exists:
+        print("Creating drug_event_view ...")
+        cur.execute(
+            f"""
+            CREATE View {view_name} AS
+            SELECT im.subject_id, im.hadm_id, im.starttime, im.itemid, di.abbreviation
+            FROM inputevents_mv as im
+            JOIN d_items as di
+            ON im.itemid=di.itemid;
+            """
+        )
+        conn.commit()
+
     drug_events = pd.read_sql(
-        """
-        SELECT im.subject_id, im.hadm_id, im.starttime, im.itemid, di.abbreviation
-        FROM inputevents_mv as im
-        JOIN d_items as di
-        ON im.itemid=di.itemid;
-        """, conn)
+        f"""
+        SELECT * from {view_name};
+        """, conn
+    )
 
     drug_events_last_year = drug_events[drug_events['hadm_id'].isin(hadm_id_set)]
 
-    drug_events_filtered = drug_events_last_year[drug_events_last_year['subject_id'].isin(heart_disease_id_set)]
+    drug_events_filtered = drug_events_last_year[drug_events_last_year['subject_id'].isin(patient_ids)]
 
     drug_events_filtered2 = drug_events_filtered.drop_duplicates()
 
@@ -107,22 +106,39 @@ def preprocess_data(postgres_pw, data_path):
     drug_events_by_patient3 = drug_events_by_patient2[
         drug_events_by_patient2['count'].apply(lambda x: True if x >= 3 and x <= 50 else False)]
 
+    print("Getting relevant procedure codes ...")
+
+    view_name = 'procedure_code_view'
+    procedure_code_view_exists = pd.read_sql(
+        f"select exists(select * from pg_views where viewname = '{view_name}');",
+        conn)['exists'][0]
+
+    if not procedure_code_view_exists:
+        print("Creating procedure code view ...")
+        cur.execute(
+            f"""
+                  CREATE View {view_name} AS
+                      SELECT a.admittime, procedures.* 
+                        FROM admissions AS a
+                        RIGHT JOIN
+                        (SELECT pi.subject_id, pi.hadm_id, pi.seq_num, pi.icd9_code, dip.short_title
+                        FROM procedures_icd AS pi
+                        JOIN d_icd_procedures AS dip
+                        ON pi.icd9_code=dip.icd9_code) AS procedures
+                        ON a.hadm_id=procedures.hadm_id;
+                  """
+        )
+        conn.commit()
+
     procedure_codes = pd.read_sql(
-        """
-        SELECT a.admittime, procedures.* 
-        FROM admissions AS a
-        RIGHT JOIN
-            (SELECT pi.subject_id, pi.hadm_id, pi.seq_num, pi.icd9_code, dip.short_title
-            FROM procedures_icd AS pi
-            JOIN d_icd_procedures AS dip
-            ON pi.icd9_code=dip.icd9_code) AS procedures
-        ON a.hadm_id=procedures.hadm_id;
+        f"""
+        SELECT * from {view_name};
         """, conn)
 
     procedure_codes_last_year = procedure_codes[procedure_codes['hadm_id'].isin(hadm_id_set)]
 
     procedure_codes_filtered = procedure_codes_last_year[
-        procedure_codes_last_year['subject_id'].isin(heart_disease_id_set)]
+        procedure_codes_last_year['subject_id'].isin(patient_ids)]
 
     procedure_codes_filtered2 = procedure_codes_filtered.drop(['short_title', 'hadm_id'], axis=1)
 
@@ -154,6 +170,8 @@ def preprocess_data(postgres_pw, data_path):
     drug_events_procedures_merged4 = drug_events_procedures_merged3.rename(
         columns={"icd9_code": "procedure_codes", "itemid": "drug_events"})
 
+    print("Getting survival data ...")
+
     survival_subject_ids = pd.read_sql(
         """
         SELECT subject_id FROM patients
@@ -164,6 +182,8 @@ def preprocess_data(postgres_pw, data_path):
 
     drug_events_procedures_merged4['survival'] = [1 if idx in survival_id_set else 0 for idx in
                                                   drug_events_procedures_merged4['subject_id']]
+
+    print("Getting static patient data ...")
 
     patients = pd.read_sql(
         """
@@ -263,12 +283,15 @@ def preprocess_data(postgres_pw, data_path):
     ORDER BY ie.subject_id, adm.admittime, ie.intime;
         """, conn)
 
+    print("Merging all of the data ...")
+
     patients['age'] = pd.to_numeric([95 if age >= 300 else age for age in patients['age']])
     patients['gender'], _ = pd.factorize(patients['gender'])
     patients['ethnicity'], _ = pd.factorize(patients['ethnicity'])
     patients['admission_type'], _ = pd.factorize(patients['admission_type'])
     patients['first_hosp_stay'], _ = pd.factorize(patients['first_hosp_stay'])
     patients['first_icu_stay'], _ = pd.factorize(patients['first_icu_stay'])
+    patients = patients.merge(subjects_and_diagnoses, on="subject_id", how='left')
 
     final_merged = drug_events_procedures_merged4.copy().merge(patients, on="subject_id", how='left')
     final_merged['drug_events'] = final_merged['drug_events'].apply(lambda x: ' '.join(str(i) for i in x))
@@ -281,6 +304,8 @@ def preprocess_data(postgres_pw, data_path):
 
     validation_neg = neg_data.sample(n=200, random_state=3)
     train_neg = neg_data.drop(validation_neg.index)
+
+    print("Exporting the data ...")
 
     train_neg.to_csv(path_or_buf=f'./{data_path}/train_neg.txt', index=False)
     validation_neg.to_csv(path_or_buf=f'./{data_path}/validation_neg.txt', index=False)

@@ -50,7 +50,9 @@ def train_and_eval_models(
     train_neg['survival'] = [0 for i in range(train_neg.shape[0])]
 
     output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}"
+    plot_folder = f"{output_folder}/plots"
     os.mkdir(output_folder)
+    os.mkdir(plot_folder)
 
     static_feature_names = [
         'gender',
@@ -95,7 +97,7 @@ def train_and_eval_models(
 
     X_val_events.head()
 
-    vocab_size = 1100
+    vocab_size = 3000
     max_seq_length = 74
 
     tokenizer = Tokenizer(num_words=vocab_size)
@@ -119,7 +121,7 @@ def train_and_eval_models(
         plt.ylabel(metric)
         plt.legend([metric, 'val_' + metric])
         plt.title(f"Training performance for {title}")
-        plt.savefig(f"{output_folder}/training_performance-{title}_{metric}.png")
+        plt.savefig(f"{plot_folder}/training_performance-{title}_{metric}.png")
 
     def eval_model_preds(preds, reference, prediction_result_df, model_name):
 
@@ -194,7 +196,7 @@ def train_and_eval_models(
     outputs = layers.Dense(1, activation="sigmoid")(x)
     dynamic_lstm_model = keras.Model(inputs, outputs)
 
-    plot_model(dynamic_lstm_model, f"{output_folder}/dynamic_lstm_model.png")
+    plot_model(dynamic_lstm_model, f"{plot_folder}/dynamic_lstm_model.png")
 
     dynamic_lstm_model.summary()
 
@@ -261,7 +263,7 @@ def train_and_eval_models(
 
     full_lstm_model.compile("adam", "binary_crossentropy", metrics=["accuracy"])
 
-    plot_model(full_lstm_model, f"{output_folder}/full_lstm_model.png")
+    plot_model(full_lstm_model, f"{plot_folder}/full_lstm_model.png")
 
     full_lstm_model.summary()
 
@@ -353,7 +355,7 @@ def train_and_eval_models(
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(
-            model.predict([X_cf_delete_retrieve_padded[:len(X_val_neg_static)], X_val_neg_static]) > 0.5) / test_size
+            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static]) > 0.5) / test_size
     elif model_to_explain == "rf":
         fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
     else:
@@ -448,6 +450,9 @@ def train_and_eval_models(
 
         return results
 
+    # TODO:
+    # Filter results space here
+
     pairwise_bleu_delete = get_pairwise_bleu(original_event_sequences, trans_event_delete)
     avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
     print(round(avg_bleu_delete, 4))
@@ -498,7 +503,7 @@ def train_and_eval_models(
     plt.title('1-NN, BLUE score')
     plt.hist(pariwise_bleu_one_nn, density=True, bins=30)
 
-    plt.savefig(f"{output_folder}/histograms_{model_to_explain}.png")
+    plt.savefig(f"{plot_folder}/histograms_{model_to_explain}.png")
 
     original_counts = pd.DataFrame(columns=['total', 'drug', 'procedure'])
 
@@ -565,7 +570,7 @@ def train_and_eval_models(
     plt.title('1-NN, procedure difference')
     plt.hist(substracted_one_nn['procedure'], density=True, bins=12)
 
-    plt.savefig(f"{output_folder}/difference_plot-{model_to_explain}.png")
+    plt.savefig(f"{plot_folder}/difference_plot-{model_to_explain}.png")
 
     conn = psycopg2.connect(
         database="mimic",
@@ -623,7 +628,7 @@ def train_and_eval_models(
         plot_sequence(
             code_to_name(original_event_sequences[sample_id]),
             title=f"ID_{sample_id}-{model_to_explain}-Original_Sequence",
-            output_folder=output_folder
+            output_folder=plot_folder
         )
 
         code_to_name(trans_event_delete[sample_id])
@@ -631,7 +636,7 @@ def train_and_eval_models(
         plot_sequence(
             code_to_name(trans_event_delete[sample_id]),
             title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
-            output_folder=output_folder
+            output_folder=plot_folder
         )
 
         code_to_name(trans_event_delete_retrieve[sample_id])
@@ -639,7 +644,7 @@ def train_and_eval_models(
         plot_sequence(
             code_to_name(trans_event_delete_retrieve[sample_id]),
             title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
-            output_folder=output_folder
+            output_folder=plot_folder
         )
 
         code_to_name(trans_event_one_nn[sample_id])
@@ -647,5 +652,5 @@ def train_and_eval_models(
         plot_sequence(
             code_to_name(trans_event_one_nn[sample_id]),
             title=f"ID_{sample_id}-{model_to_explain}-1-NN_Sequence",
-            output_folder=output_folder
+            output_folder=plot_folder
         )

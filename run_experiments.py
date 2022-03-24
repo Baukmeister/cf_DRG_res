@@ -11,14 +11,14 @@ if __name__ == "__main__":
     TRAIN_AND_EVAL_MODELS = False
 
     DATA_OUT_FOLDER = "./processed_mimic_data"
-    DRG_MODEL_PATH = "./drg_models/all"
+    DRG_MODEL_PATH = "./drg_models/all_updated"
     MODELS_TO_TRAIN = [
         'dynamic_lstm',
         'full_lstm',
         'rf',
         '1-NN'
     ]
-    MODELS_TO_EXPLAIN = 'full_lstm'
+    MODELS_TO_EXPLAIN = 'dynamic_lstm'
     RESULTS_PATH = "./results"
 
     personal_config = json.load(open("./personal_config.json"))
