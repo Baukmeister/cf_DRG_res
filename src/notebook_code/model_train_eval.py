@@ -1,6 +1,8 @@
 from datetime import datetime
 import os
 import csv
+from typing import List
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics import confusion_matrix
@@ -29,6 +31,8 @@ import pandas.io.sql as sqlio
 import psycopg2
 import getpass
 import matplotlib.pyplot as plt
+
+from src.Restrictions import Restriction
 from src.visualize import plot_sequence
 
 
@@ -39,7 +43,11 @@ def train_and_eval_models(
         models_to_train,
         model_to_explain,
         results_path,
-        sequences_to_plot
+        sequences_to_plot,
+        tfidf_names,
+        dynamic_batch_size=64,
+        full_batch_size=8,
+        cf_restrictions=List[Restriction]
 ):
     tf.test.is_gpu_available()
 
@@ -49,20 +57,20 @@ def train_and_eval_models(
     train_pos['survival'] = [1 for i in range(train_pos.shape[0])]
     train_neg['survival'] = [0 for i in range(train_neg.shape[0])]
 
-    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}"
+    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}-dbs-{dynamic_batch_size}-fbs-{full_batch_size}"
     plot_folder = f"{output_folder}/plots"
     os.mkdir(output_folder)
     os.mkdir(plot_folder)
 
     static_feature_names = [
-        'gender',
-        'age',
-        'los_hospital',
-        'ethnicity',
-        'admission_type',
-        'first_hosp_stay',
-        'first_icu_stay'
-    ]
+                               'gender',
+                               'age',
+                               'los_hospital',
+                               'ethnicity',
+                               'admission_type',
+                               'first_hosp_stay',
+                               'first_icu_stay'
+                           ] + tfidf_names
 
     cf_result_df = pd.DataFrame(columns=["metric", "value"])
     prediction_result_df = pd.DataFrame(columns=["metric", "value"])
@@ -207,8 +215,8 @@ def train_and_eval_models(
         model_history = dynamic_lstm_model.fit(
             X_train_padded,
             y_train,
-            epochs=30,
-            batch_size=64,
+            epochs=50,
+            batch_size=dynamic_batch_size,
             validation_data=(X_val_padded, y_val),
             callbacks=[early_stopping]
         )
@@ -243,20 +251,32 @@ def train_and_eval_models(
     x_dyn = layers.Dense(64)(x)
 
     x_i_stat = Input(shape=(len(static_feature_names),))
-    x2 = layers.Dense(64)(x_i_stat)
-    x2 = layers.Activation('relu')(x2)
-    x_pa2 = layers.Dense(64)(x2)
-    x2 = Activation('relu')(x_pa2)
+    x2 = layers.Dense(len(static_feature_names))(x_i_stat)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(64)(x2)
+    x2 = layers.Dense(64)(x2)
+    x2 = layers.Dense(64)(x2)
+    x2 = Activation('relu')(x2)
     x_stat = Dropout(0.1)(x2)
 
     x_dot = Dot(axes=1, normalize=True)([x_stat, x_dyn])
     x = layers.Dense(128)(x_dot)
-    x = Activation('relu')(x)
     x = layers.Dense(128)(x)
     x = layers.Dense(128)(x)
-    x = Activation('relu')(x)
     x = layers.Dense(128)(x)
-
     x_o = Dense(1, activation="sigmoid")(x)
 
     full_lstm_model = Model([x_i_dyn, x_i_stat], x_o)
@@ -271,8 +291,8 @@ def train_and_eval_models(
         full_lstm_hist = full_lstm_model.fit(
             [X_train_padded, X_train_static],
             y_train,
-            epochs=100,
-            batch_size=64,
+            epochs=50,
+            batch_size=full_batch_size,
             validation_data=([X_val_padded, X_val_static], y_val),
             callbacks=early_stopping
         )
@@ -309,16 +329,20 @@ def train_and_eval_models(
                                                   sep=' ', quoting=csv.QUOTE_NONE, escapechar=' ')
 
     trans_results_delete = pd.read_csv(f'{drg_model_path}/drg_delete/preds', header=None)
+    trans_results_delete_retrieve = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)
 
-    X_cf_delete = tokenizer.texts_to_sequences(trans_results_delete[0])
+    # enforce restrictions
 
-    X_cf_delete_padded = sequence.pad_sequences(X_cf_delete, maxlen=max_seq_length, padding='post')
+    compliant_delete_sequences_idx = list(trans_results_delete.index)
+    compliant_delete_retrieve_sequences_idx = list(trans_results_delete_retrieve.index)
 
-    delete_generate_results = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)
-
-    X_cf_delete_retrieve = tokenizer.texts_to_sequences(delete_generate_results[0])
-
-    X_cf_delete_retrieve_padded = sequence.pad_sequences(X_cf_delete_retrieve, maxlen=max_seq_length, padding='post')
+    for cf_restriction in cf_restrictions:
+        compliant_delete_sequences_idx = cf_restriction \
+            .get_compliant_sequence_indices(list(trans_results_delete[0][compliant_delete_sequences_idx]),
+                                            list(validation_neg.diagnoses_text[compliant_delete_sequences_idx]))
+        compliant_delete_retrieve_sequences_idx = cf_restriction \
+            .get_compliant_sequence_indices(list(trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx]),
+                                            list(validation_neg.diagnoses_text[compliant_delete_retrieve_sequences_idx]))
 
     nn_model = NearestNeighbors(n_neighbors=1, metric='hamming')
     target_label = 1
@@ -331,18 +355,26 @@ def train_and_eval_models(
 
     X_cf_one_nn = trans_results_nn
 
+    X_cf_delete = tokenizer.texts_to_sequences(trans_results_delete[0][compliant_delete_sequences_idx])
+    X_cf_delete_retrieve = tokenizer.texts_to_sequences(trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx])
+
+    X_cf_delete_padded = sequence.pad_sequences(X_cf_delete, maxlen=max_seq_length, padding='post')
+    X_cf_delete_retrieve_padded = sequence.pad_sequences(X_cf_delete_retrieve, maxlen=max_seq_length, padding='post')
+
     trans_event_delete = tokenizer.sequences_to_texts(X_cf_delete_padded)
     trans_event_delete_retrieve = tokenizer.sequences_to_texts(X_cf_delete_retrieve_padded)
     trans_event_one_nn = tokenizer.sequences_to_texts(X_cf_one_nn)
 
+    test_size_delete = len(compliant_delete_sequences_idx)
+    test_size_delete_retrieve = len(compliant_delete_retrieve_sequences_idx)
     test_size = X_val_neg_static.shape[0]
 
     if model_to_explain == 'full_lstm':
-        fraction_success = np.sum(model.predict([X_cf_delete_padded, X_val_neg_static]) > 0.5) / test_size
+        fraction_success = np.sum(model.predict([X_cf_delete_padded, X_val_neg_static.loc[compliant_delete_sequences_idx]]) > 0.5) / test_size_delete
     elif model_to_explain == "rf":
         fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
     else:
-        fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size
+        fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size_delete
     print(round(fraction_success, 4))
 
     cf_result_df = cf_result_df.append(
@@ -355,11 +387,11 @@ def train_and_eval_models(
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(
-            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static]) > 0.5) / test_size
+            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static.loc[compliant_delete_retrieve_sequences_idx]]) > 0.5) / test_size_delete_retrieve
     elif model_to_explain == "rf":
         fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
     else:
-        fraction_success = np.sum(model.predict(X_cf_delete_retrieve_padded) > 0.5) / test_size
+        fraction_success = np.sum(model.predict(X_cf_delete_retrieve_padded) > 0.5) / test_size_delete_retrieve
     print(round(fraction_success, 4))
 
     cf_result_df = cf_result_df.append(
@@ -449,9 +481,6 @@ def train_and_eval_models(
             for pair in zip(original, transformed)]
 
         return results
-
-    # TODO:
-    # Filter results space here
 
     pairwise_bleu_delete = get_pairwise_bleu(original_event_sequences, trans_event_delete)
     avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
@@ -620,7 +649,6 @@ def train_and_eval_models(
     prediction_result_df.to_csv(f"{output_folder}/prediction_metrics.csv")
 
     for sample_id in sequences_to_plot:
-
         print(f"Plotting sequence with ID: {sample_id} ...")
 
         code_to_name(original_event_sequences[sample_id])

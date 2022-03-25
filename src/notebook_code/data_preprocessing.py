@@ -1,7 +1,15 @@
-def preprocess_data(postgres_pw, data_path):
-    import pandas as pd
-    import psycopg2
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+import psycopg2
+from sklearn.feature_extraction.text import TfidfVectorizer
 
+
+def preprocess_data(
+        postgres_pw,
+        data_path,
+        num_tfidf_features,
+        tfidf_names
+):
     conn = psycopg2.connect(
         database="mimic",
         user='postgres',
@@ -22,12 +30,21 @@ def preprocess_data(postgres_pw, data_path):
     print("Getting relevant subjects and their diagnoses ...")
     subjects_and_diagnoses = pd.read_sql(
         """
-        select subject_id, string_agg(icd9_code, ',') AS diagnoses
+        select subject_id, string_agg(icd9_code, ' ') AS diagnoses
         from diagnoses_icd 
         group by subject_id;
         """, conn)
 
     patient_ids = set(subjects_and_diagnoses['subject_id'])
+
+    print("Creating TF-IDF features for diagnoses codes ...")
+
+    vectorizer = TfidfVectorizer(max_features=num_tfidf_features)
+    diagnoses_list = [doc if doc is not None else "" for doc in subjects_and_diagnoses.diagnoses.tolist()]
+    tfidf_vectors = vectorizer.fit_transform(diagnoses_list).toarray()
+
+    subjects_and_diagnoses = pd.concat([subjects_and_diagnoses, pd.DataFrame(tfidf_vectors)], axis=1)
+    subjects_and_diagnoses.columns = ['subject_id', 'diagnoses_text'] + tfidf_names
 
     print("Getting relevant admission events ...")
 
@@ -284,9 +301,6 @@ def preprocess_data(postgres_pw, data_path):
         """, conn)
 
     print("Merging all of the data ...")
-
-    # TODO:
-    # Use TDIF to extract features from the diagnoses codes
 
     patients['age'] = pd.to_numeric([95 if age >= 300 else age for age in patients['age']])
     patients['gender'], _ = pd.factorize(patients['gender'])
