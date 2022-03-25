@@ -21,12 +21,12 @@ if __name__ == "__main__":
     DATA_OUT_FOLDER = "./processed_mimic_data"
     DRG_MODEL_PATH = "./drg_models/all_updated"
     MODELS_TO_TRAIN = [
-        # 'dynamic_lstm',
-        #'full_lstm',
+        'dynamic_lstm',
+        'full_lstm',
         'rf',
         '1-NN'
     ]
-    MODELS_TO_EXPLAIN = 'rf'
+    MODELS_TO_EXPLAIN = 'full_lstm'
     RESULTS_PATH = "./results"
 
     personal_config = json.load(open("./personal_config.json"))
@@ -52,10 +52,10 @@ if __name__ == "__main__":
             models_to_train=MODELS_TO_TRAIN,
             model_to_explain=MODELS_TO_EXPLAIN,
             results_path=RESULTS_PATH,
-            sequences_to_plot=[1, 2, 3, 4, 5, 6, 7, 8],
+            sequences_to_plot=[0, 2, 6, 12, 37, 40, 65, 70],
             tfidf_names=TFIDF_NAMES,
-            full_batch_size=2048,
-            dynamic_batch_size=2048,
+            full_batch_size=64,
+            dynamic_batch_size=8,
             cf_restrictions=CF_RESTRICTIONS
         )
         print("Model training and evaluation step done!")

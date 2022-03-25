@@ -13,17 +13,17 @@ class Restriction:
         self.itemA = itemA
         self.itemB = itemB
 
-    def get_compliant_sequence_indices(self, event_sequences, diagnoses):
+    def get_compliant_sequence_indices(self, event_sequences, diagnoses, relevant_indices):
 
         if self.kind is RestrictionKind.DRUG_DRUG:
 
-            compliant_indices = [i for i, seq in enumerate(event_sequences)
-                                 if not (self.itemA in seq and self.itemB in seq)]
+            compliant_indices = [i for i in relevant_indices
+                                 if not (self.itemA in event_sequences[i] and self.itemB in event_sequences[i])]
 
         elif self.kind is RestrictionKind.DRUG_DISEASE:
 
-            compliant_indices = [i for i, (drugs, diseases) in enumerate(zip(event_sequences, diagnoses))
-                                 if not (self.itemA in drugs and self.itemB in diseases)]
+            compliant_indices = [i for i in relevant_indices
+                                 if not (self.itemA in event_sequences[i] and self.itemB in diagnoses[i])]
 
         print(f"While enforcing restriction {len(compliant_indices)} out of {len(event_sequences)} were kept")
 

@@ -100,8 +100,8 @@ def train_and_eval_models(
     validation_reordered = validation.sample(frac=1, random_state=3)
 
     X_val_neg_static = validation_neg[static_feature_names]
-    X_val_events, X_val_static, y_val = validation_reordered["events"], validation_reordered[static_feature_names], \
-                                        validation_reordered['survival']
+    X_val_events, X_val_static, y_val = validation["events"], validation[static_feature_names], \
+                                        validation['survival']
 
     X_val_events.head()
 
@@ -320,29 +320,35 @@ def train_and_eval_models(
         y_pred = rf_pred
         model = rf
 
-    X_pred_negative = X_val_padded[y_pred == 0]
-    X_pred_negative_static = X_val_static[y_pred == 0]
+    relevant_y_pred = y_pred[-len(validation_neg):]
+    X_pred_negative = X_val_padded[-len(validation_neg):][relevant_y_pred == 0]
+    X_pred_negative_static = X_val_padded[-len(validation_neg):][relevant_y_pred == 0]
 
     original_event_sequences = tokenizer.sequences_to_texts(X_pred_negative)
 
-    pd.DataFrame(original_event_sequences).to_csv(path_or_buf=f'{data_path}/test_neg.txt', index=False, header=False,
-                                                  sep=' ', quoting=csv.QUOTE_NONE, escapechar=' ')
-
-    trans_results_delete = pd.read_csv(f'{drg_model_path}/drg_delete/preds', header=None)
-    trans_results_delete_retrieve = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)
+    trans_results_delete = pd.read_csv(f'{drg_model_path}/drg_delete/preds', header=None)[relevant_y_pred == 0]
+    trans_results_delete_retrieve = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)[relevant_y_pred == 0]
+    trans_results_delete.reset_index(inplace=True, drop=True)
+    trans_results_delete_retrieve.reset_index(inplace=True, drop=True)
 
     # enforce restrictions
-
-    compliant_delete_sequences_idx = list(trans_results_delete.index)
+    compliant_delete_sequences_idx = list(trans_results_delete_retrieve.index)
     compliant_delete_retrieve_sequences_idx = list(trans_results_delete_retrieve.index)
 
     for cf_restriction in cf_restrictions:
         compliant_delete_sequences_idx = cf_restriction \
-            .get_compliant_sequence_indices(list(trans_results_delete[0][compliant_delete_sequences_idx]),
-                                            list(validation_neg.diagnoses_text[compliant_delete_sequences_idx]))
+            .get_compliant_sequence_indices(
+            list(trans_results_delete[0]),
+            list(validation_neg.diagnoses_text),
+            compliant_delete_sequences_idx
+        )
+
         compliant_delete_retrieve_sequences_idx = cf_restriction \
-            .get_compliant_sequence_indices(list(trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx]),
-                                            list(validation_neg.diagnoses_text[compliant_delete_retrieve_sequences_idx]))
+            .get_compliant_sequence_indices(
+            list(trans_results_delete_retrieve[0]),
+            list(validation_neg.diagnoses_text),
+            compliant_delete_retrieve_sequences_idx
+        )
 
     nn_model = NearestNeighbors(n_neighbors=1, metric='hamming')
     target_label = 1
@@ -356,7 +362,8 @@ def train_and_eval_models(
     X_cf_one_nn = trans_results_nn
 
     X_cf_delete = tokenizer.texts_to_sequences(trans_results_delete[0][compliant_delete_sequences_idx])
-    X_cf_delete_retrieve = tokenizer.texts_to_sequences(trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx])
+    X_cf_delete_retrieve = tokenizer.texts_to_sequences(
+        trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx])
 
     X_cf_delete_padded = sequence.pad_sequences(X_cf_delete, maxlen=max_seq_length, padding='post')
     X_cf_delete_retrieve_padded = sequence.pad_sequences(X_cf_delete_retrieve, maxlen=max_seq_length, padding='post')
@@ -370,7 +377,8 @@ def train_and_eval_models(
     test_size = X_val_neg_static.shape[0]
 
     if model_to_explain == 'full_lstm':
-        fraction_success = np.sum(model.predict([X_cf_delete_padded, X_val_neg_static.loc[compliant_delete_sequences_idx]]) > 0.5) / test_size_delete
+        fraction_success = np.sum(model.predict(
+            [X_cf_delete_padded, X_val_neg_static.loc[compliant_delete_sequences_idx]]) > 0.5) / test_size_delete
     elif model_to_explain == "rf":
         fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
     else:
@@ -387,7 +395,8 @@ def train_and_eval_models(
 
     if model_to_explain == 'full_lstm':
         fraction_success = np.sum(
-            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static.loc[compliant_delete_retrieve_sequences_idx]]) > 0.5) / test_size_delete_retrieve
+            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static.loc[
+                compliant_delete_retrieve_sequences_idx]]) > 0.5) / test_size_delete_retrieve
     elif model_to_explain == "rf":
         fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
     else:
@@ -472,7 +481,6 @@ def train_and_eval_models(
     chencherry = SmoothingFunction()
 
     def get_pairwise_bleu(original, transformed):
-
         results = [sentence_bleu(
             references=[pair[0].split()],
             hypothesis=pair[1].split(),
@@ -482,7 +490,10 @@ def train_and_eval_models(
 
         return results
 
-    pairwise_bleu_delete = get_pairwise_bleu(original_event_sequences, trans_event_delete)
+    pairwise_bleu_delete = get_pairwise_bleu(
+        [original_event_sequences[i] for i in compliant_delete_sequences_idx],
+        trans_event_delete
+    )
     avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
     print(round(avg_bleu_delete, 4))
 
@@ -494,7 +505,10 @@ def train_and_eval_models(
         ignore_index=True
     )
 
-    pairwise_bleu_delete_retrieve = get_pairwise_bleu(original_event_sequences, trans_event_delete_retrieve)
+    pairwise_bleu_delete_retrieve =get_pairwise_bleu(
+        [original_event_sequences[i] for i in compliant_delete_retrieve_sequences_idx],
+        trans_event_delete_retrieve
+    )
     avg_bleu_delete_retrieve = sum(pairwise_bleu_delete_retrieve) / test_size
     print(round(avg_bleu_delete_retrieve, 4))
 
@@ -659,21 +673,25 @@ def train_and_eval_models(
             output_folder=plot_folder
         )
 
-        code_to_name(trans_event_delete[sample_id])
+        if sample_id in compliant_delete_sequences_idx:
+            relevant_id = [k for k,v in enumerate(compliant_delete_sequences_idx) if v == sample_id][0]
+            code_to_name(trans_event_delete[relevant_id])
 
-        plot_sequence(
-            code_to_name(trans_event_delete[sample_id]),
-            title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
-            output_folder=plot_folder
-        )
+            plot_sequence(
+                code_to_name(trans_event_delete[sample_id]),
+                title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
+                output_folder=plot_folder
+            )
 
-        code_to_name(trans_event_delete_retrieve[sample_id])
+        if sample_id in compliant_delete_retrieve_sequences_idx:
+            relevant_id = [k for k,v in enumerate(compliant_delete_retrieve_sequences_idx) if v == sample_id][0]
+            code_to_name(trans_event_delete_retrieve[relevant_id])
 
-        plot_sequence(
-            code_to_name(trans_event_delete_retrieve[sample_id]),
-            title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
-            output_folder=plot_folder
-        )
+            plot_sequence(
+                code_to_name(trans_event_delete_retrieve[relevant_id]),
+                title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
+                output_folder=plot_folder
+            )
 
         code_to_name(trans_event_one_nn[sample_id])
 
