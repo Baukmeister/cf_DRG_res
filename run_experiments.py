@@ -52,10 +52,10 @@ if __name__ == "__main__":
             models_to_train=MODELS_TO_TRAIN,
             model_to_explain=MODELS_TO_EXPLAIN,
             results_path=RESULTS_PATH,
-            sequences_to_plot=[0, 2, 6, 12, 37, 40, 65, 70],
+            sequences_to_plot=[0, 2, 6, 13, 37, 40, 65, 70],
             tfidf_names=TFIDF_NAMES,
             full_batch_size=64,
-            dynamic_batch_size=8,
+            dynamic_batch_size=16,
             cf_restrictions=CF_RESTRICTIONS
         )
         print("Model training and evaluation step done!")

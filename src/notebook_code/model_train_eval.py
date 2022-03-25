@@ -322,7 +322,7 @@ def train_and_eval_models(
 
     relevant_y_pred = y_pred[-len(validation_neg):]
     X_pred_negative = X_val_padded[-len(validation_neg):][relevant_y_pred == 0]
-    X_pred_negative_static = X_val_padded[-len(validation_neg):][relevant_y_pred == 0]
+    X_pred_negative_static = X_val_neg_static[relevant_y_pred == 0]
 
     original_event_sequences = tokenizer.sequences_to_texts(X_pred_negative)
 
