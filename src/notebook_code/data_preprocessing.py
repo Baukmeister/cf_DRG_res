@@ -1,5 +1,6 @@
 from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
+import numpy as np
 import psycopg2
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -8,7 +9,8 @@ def preprocess_data(
         postgres_pw,
         data_path,
         num_tfidf_features,
-        tfidf_names
+        tfidf_names,
+        seed
 ):
     conn = psycopg2.connect(
         database="mimic",
@@ -318,6 +320,8 @@ def preprocess_data(
 
     neg_data = final_merged[final_merged['survival'] == 0].drop(columns=['survival'])
     pos_data = final_merged[final_merged['survival'] == 1].drop(columns=['survival'])
+
+    np.random.seed(seed)
 
     validation_neg = neg_data.sample(n=200, random_state=3)
     train_neg = neg_data.drop(validation_neg.index)

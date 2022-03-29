@@ -6,7 +6,7 @@ from typing import List
 import pandas as pd
 import numpy as np
 from sklearn.metrics import confusion_matrix
-from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor
+from sklearn.neighbors import NearestNeighbors, LocalOutlierFactor, KNeighborsClassifier
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 import keras
 import tensorflow as tf
@@ -25,7 +25,7 @@ from keras.utils.vis_utils import plot_model
 import math
 from sklearn import preprocessing
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_curve, auc
 from keras import backend as K
 import pandas.io.sql as sqlio
 import psycopg2
@@ -47,7 +47,10 @@ def train_and_eval_models(
         tfidf_names,
         dynamic_batch_size=64,
         full_batch_size=8,
-        cf_restrictions=List[Restriction]
+        epochs=50,
+        cf_restrictions=List[Restriction],
+        early_stopping=True,
+        seed=42
 ):
     tf.test.is_gpu_available()
 
@@ -57,7 +60,11 @@ def train_and_eval_models(
     train_pos['survival'] = [1 for i in range(train_pos.shape[0])]
     train_neg['survival'] = [0 for i in range(train_neg.shape[0])]
 
-    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}-dbs-{dynamic_batch_size}-fbs-{full_batch_size}"
+    output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}-dbs-{dynamic_batch_size}-fbs-{full_batch_size}-seed-{seed}"
+
+    if not early_stopping:
+        output_folder += "-no_early_stopping"
+
     plot_folder = f"{output_folder}/plots"
     os.mkdir(output_folder)
     os.mkdir(plot_folder)
@@ -89,12 +96,6 @@ def train_and_eval_models(
 
     validation_pos['survival'] = [1 for i in range(validation_pos.shape[0])]
     validation_neg['survival'] = [0 for i in range(validation_neg.shape[0])]
-
-    #    validation_neg['events'] = validation_neg['drug_events'] + " " + validation_neg['procedure_codes']
-    #    validation_pos['events'] = validation_pos['drug_events'] + " " + validation_pos['procedure_codes']
-    #
-    #    train_neg['events'] = train_neg['drug_events'] + " " + train_neg['procedure_codes']
-    #    train_pos['events'] = train_pos['drug_events'] + " " + train_pos['procedure_codes']
 
     validation = pd.concat([validation_pos, validation_neg]).reset_index()
     validation_reordered = validation.sample(frac=1, random_state=3)
@@ -133,8 +134,15 @@ def train_and_eval_models(
 
     def eval_model_preds(preds, reference, prediction_result_df, model_name):
 
-        validation_acc = accuracy_score(y_true=reference, y_pred=preds)
-        f1 = f1_score(y_true=reference, y_pred=preds)
+        categoric_preds = np.array([1 if pred > 0.5 else 0 for pred in preds])
+
+        validation_acc = accuracy_score(y_true=reference, y_pred=categoric_preds)
+        f1 = f1_score(y_true=reference, y_pred=categoric_preds)
+        precision = precision_score(y_true=reference, y_pred=categoric_preds)
+        recall = recall_score(y_true=reference, y_pred=categoric_preds)
+        fpr, tpr, thresholds = roc_curve(reference, preds, pos_label=1)
+        auc_score = auc(fpr, tpr)
+
         print(f'Validation Accuracy: {validation_acc}')
 
         prediction_result_df = prediction_result_df.append(
@@ -154,8 +162,35 @@ def train_and_eval_models(
             ignore_index=True
         )
 
+        print(f'Precision: {precision}')
+        prediction_result_df = prediction_result_df.append(
+            {
+                'metric': f'{model_name}_precision',
+                'value': precision
+            },
+            ignore_index=True
+        )
+
+        print(f'Recall: {recall}')
+        prediction_result_df = prediction_result_df.append(
+            {
+                'metric': f'{model_name}_recall',
+                'value': recall
+            },
+            ignore_index=True
+        )
+
+        print(f'AUC: {auc_score}')
+        prediction_result_df = prediction_result_df.append(
+            {
+                'metric': f'{model_name}_auc',
+                'value': auc_score
+            },
+            ignore_index=True
+        )
+
         confusion_matrix_df = pd.DataFrame(
-            confusion_matrix(y_true=reference, y_pred=preds, labels=[1, 0]),
+            confusion_matrix(y_true=reference, y_pred=categoric_preds, labels=[1, 0]),
             index=['True:pos', 'True:neg'],
             columns=['Pred:pos', 'Pred:neg']
         )
@@ -164,11 +199,14 @@ def train_and_eval_models(
         print()
 
         print('Negative and positive predictions')
-        print(pd.value_counts(preds))
+        print(pd.value_counts(categoric_preds))
 
         return prediction_result_df
 
-    early_stopping = EarlyStopping(monitor='val_loss', patience=5)
+    if early_stopping:
+        callbacks = [EarlyStopping(monitor='val_loss', patience=3)]
+    else:
+        callbacks = []
 
     seed_value = 3
 
@@ -215,17 +253,17 @@ def train_and_eval_models(
         model_history = dynamic_lstm_model.fit(
             X_train_padded,
             y_train,
-            epochs=50,
+            epochs=epochs,
             batch_size=dynamic_batch_size,
             validation_data=(X_val_padded, y_val),
-            callbacks=[early_stopping]
+            callbacks=callbacks
         )
 
         plot_graphs(model_history, "accuracy", 'dynamic_lstm')
         plot_graphs(model_history, "loss", 'dynamic_lstm')
 
-        dynamic_lstm_pred = np.array([1 if pred > 0.5 else 0 for pred in dynamic_lstm_model.predict(X_val_padded)])
-        prediction_result_df = eval_model_preds(dynamic_lstm_pred, y_val, prediction_result_df, 'dynamic_lstm')
+        dynamic_lstm_pred_numeric = dynamic_lstm_model.predict(X_val_padded)
+        prediction_result_df = eval_model_preds(dynamic_lstm_pred_numeric, y_val, prediction_result_df, 'dynamic_lstm')
 
     seed_value = 3
 
@@ -255,17 +293,7 @@ def train_and_eval_models(
     x2 = layers.Dense(len(static_feature_names))(x2)
     x2 = layers.Dense(len(static_feature_names))(x2)
     x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
-    x2 = layers.Dense(len(static_feature_names))(x2)
+    x2 = layers.Dense(64)(x2)
     x2 = layers.Dense(64)(x2)
     x2 = layers.Dense(64)(x2)
     x2 = layers.Dense(64)(x2)
@@ -291,18 +319,17 @@ def train_and_eval_models(
         full_lstm_hist = full_lstm_model.fit(
             [X_train_padded, X_train_static],
             y_train,
-            epochs=50,
+            epochs=epochs,
             batch_size=full_batch_size,
             validation_data=([X_val_padded, X_val_static], y_val),
-            callbacks=early_stopping
+            callbacks=callbacks
         )
 
         plot_graphs(full_lstm_hist, "accuracy", 'full_lstm')
         plot_graphs(full_lstm_hist, "loss", 'full_lstm')
 
-        full_lstm_pred = np.array(
-            [1 if pred > 0.5 else 0 for pred in full_lstm_model.predict([X_val_padded, X_val_static])])
-        prediction_result_df = eval_model_preds(full_lstm_pred, y_val, prediction_result_df, 'full_lstm')
+        full_lstm_pred_numeric = full_lstm_model.predict([X_val_padded, X_val_static])
+        prediction_result_df = eval_model_preds(full_lstm_pred_numeric, y_val, prediction_result_df, 'full_lstm')
 
     if 'rf' in models_to_train:
         rf = RandomForestClassifier()
@@ -310,15 +337,25 @@ def train_and_eval_models(
         rf_pred = rf.predict(X_val_static)
         prediction_result_df = eval_model_preds(rf_pred, y_val, prediction_result_df, 'rf')
 
+    if '1-NN' in models_to_train:
+        one_nn_prediction_model = KNeighborsClassifier(n_neighbors=1)
+        one_nn_prediction_model.fit(X_train_padded, y_train)
+        one_nn_pred = one_nn_prediction_model.predict(X_val_padded)
+        prediction_result_df = eval_model_preds(one_nn_pred, y_val, prediction_result_df, '1-NN')
+
     if model_to_explain == 'dynamic_lstm':
-        y_pred = dynamic_lstm_pred
+        y_pred = np.array([1 if pred > 0.5 else 0 for pred in dynamic_lstm_pred_numeric])
+
         model = dynamic_lstm_model
     if model_to_explain == 'full_lstm':
-        y_pred = full_lstm_pred
+        y_pred = np.array([1 if pred > 0.5 else 0 for pred in full_lstm_pred_numeric])
         model = full_lstm_model
     if model_to_explain == 'rf':
         y_pred = rf_pred
         model = rf
+    if model_to_explain == '1-NN':
+        y_pred = one_nn_pred
+        model = one_nn_prediction_model
 
     relevant_y_pred = y_pred[-len(validation_neg):]
     X_pred_negative = X_val_padded[-len(validation_neg):][relevant_y_pred == 0]
@@ -327,7 +364,8 @@ def train_and_eval_models(
     original_event_sequences = tokenizer.sequences_to_texts(X_pred_negative)
 
     trans_results_delete = pd.read_csv(f'{drg_model_path}/drg_delete/preds', header=None)[relevant_y_pred == 0]
-    trans_results_delete_retrieve = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)[relevant_y_pred == 0]
+    trans_results_delete_retrieve = pd.read_csv(f'{drg_model_path}/drg_delete_retrieve/preds', header=None)[
+        relevant_y_pred == 0]
     trans_results_delete.reset_index(inplace=True, drop=True)
     trans_results_delete_retrieve.reset_index(inplace=True, drop=True)
 
@@ -505,7 +543,7 @@ def train_and_eval_models(
         ignore_index=True
     )
 
-    pairwise_bleu_delete_retrieve =get_pairwise_bleu(
+    pairwise_bleu_delete_retrieve = get_pairwise_bleu(
         [original_event_sequences[i] for i in compliant_delete_retrieve_sequences_idx],
         trans_event_delete_retrieve
     )
@@ -663,40 +701,43 @@ def train_and_eval_models(
     prediction_result_df.to_csv(f"{output_folder}/prediction_metrics.csv")
 
     for sample_id in sequences_to_plot:
-        print(f"Plotting sequence with ID: {sample_id} ...")
+        try:
+            print(f"Plotting sequence with ID: {sample_id} ...")
 
-        code_to_name(original_event_sequences[sample_id])
-
-        plot_sequence(
-            code_to_name(original_event_sequences[sample_id]),
-            title=f"ID_{sample_id}-{model_to_explain}-Original_Sequence",
-            output_folder=plot_folder
-        )
-
-        if sample_id in compliant_delete_sequences_idx:
-            relevant_id = [k for k,v in enumerate(compliant_delete_sequences_idx) if v == sample_id][0]
-            code_to_name(trans_event_delete[relevant_id])
+            code_to_name(original_event_sequences[sample_id])
 
             plot_sequence(
-                code_to_name(trans_event_delete[sample_id]),
-                title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
+                code_to_name(original_event_sequences[sample_id]),
+                title=f"ID_{sample_id}-{model_to_explain}-Original_Sequence",
                 output_folder=plot_folder
             )
 
-        if sample_id in compliant_delete_retrieve_sequences_idx:
-            relevant_id = [k for k,v in enumerate(compliant_delete_retrieve_sequences_idx) if v == sample_id][0]
-            code_to_name(trans_event_delete_retrieve[relevant_id])
+            if sample_id in compliant_delete_sequences_idx:
+                relevant_id = [k for k, v in enumerate(compliant_delete_sequences_idx) if v == sample_id][0]
+                code_to_name(trans_event_delete[relevant_id])
+
+                plot_sequence(
+                    code_to_name(trans_event_delete[sample_id]),
+                    title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
+                    output_folder=plot_folder
+                )
+
+            if sample_id in compliant_delete_retrieve_sequences_idx:
+                relevant_id = [k for k, v in enumerate(compliant_delete_retrieve_sequences_idx) if v == sample_id][0]
+                code_to_name(trans_event_delete_retrieve[relevant_id])
+
+                plot_sequence(
+                    code_to_name(trans_event_delete_retrieve[relevant_id]),
+                    title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
+                    output_folder=plot_folder
+                )
+
+            code_to_name(trans_event_one_nn[sample_id])
 
             plot_sequence(
-                code_to_name(trans_event_delete_retrieve[relevant_id]),
-                title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
+                code_to_name(trans_event_one_nn[sample_id]),
+                title=f"ID_{sample_id}-{model_to_explain}-1-NN_Sequence",
                 output_folder=plot_folder
             )
-
-        code_to_name(trans_event_one_nn[sample_id])
-
-        plot_sequence(
-            code_to_name(trans_event_one_nn[sample_id]),
-            title=f"ID_{sample_id}-{model_to_explain}-1-NN_Sequence",
-            output_folder=plot_folder
-        )
+        except Exception as e:
+            print(f"Error for sample {sample_id}: {e}")

@@ -8,8 +8,9 @@ from src.notebook_code.model_train_eval import train_and_eval_models
 if __name__ == "__main__":
     # CONFIG
     NUM_TFIDF_FEATURES = 300
+    RNG_SEED = 100
     TFIDF_NAMES = [f"diagnoses_tfidf_{pos}" for pos in range(NUM_TFIDF_FEATURES)]
-    RUN_PREPROCESSING = False
+    RUN_PREPROCESSING = True
     TRAIN_AND_EVAL_MODELS = True
     CF_RESTRICTIONS = [
                           Restriction(RestrictionKind.DRUG_DRUG, "225975", "3422")
@@ -38,24 +39,31 @@ if __name__ == "__main__":
 
         preprocess_data(
             postgres_pw=postgres_pw,
-            data_path=DATA_OUT_FOLDER
+            data_path=DATA_OUT_FOLDER,
+            num_tfidf_features=NUM_TFIDF_FEATURES,
+            tfidf_names=TFIDF_NAMES,
+            seed=RNG_SEED
         )
         print("Data preprocessing done!")
 
     # NOTEBOOK 2
     if TRAIN_AND_EVAL_MODELS:
         print("Started model training and evaluation step...")
-        train_and_eval_models(
-            postgres_pw=postgres_pw,
-            data_path=DATA_OUT_FOLDER,
-            drg_model_path=DRG_MODEL_PATH,
-            models_to_train=MODELS_TO_TRAIN,
-            model_to_explain=MODELS_TO_EXPLAIN,
-            results_path=RESULTS_PATH,
-            sequences_to_plot=[0, 2, 6, 13, 37, 40, 65, 70],
-            tfidf_names=TFIDF_NAMES,
-            full_batch_size=64,
-            dynamic_batch_size=16,
-            cf_restrictions=CF_RESTRICTIONS
-        )
+        for batch_size in [4,8,16,32,64,128,256,512,1024]:
+            train_and_eval_models(
+                postgres_pw=postgres_pw,
+                data_path=DATA_OUT_FOLDER,
+                drg_model_path=DRG_MODEL_PATH,
+                models_to_train=MODELS_TO_TRAIN,
+                model_to_explain=MODELS_TO_EXPLAIN,
+                results_path=RESULTS_PATH,
+                sequences_to_plot=[0, 2, 6, 14, 37, 40, 69, 72],
+                tfidf_names=TFIDF_NAMES,
+                full_batch_size=batch_size,
+                dynamic_batch_size=batch_size,
+                epochs=50,
+                cf_restrictions=CF_RESTRICTIONS,
+                early_stopping=False,
+                seed=RNG_SEED
+            )
         print("Model training and evaluation step done!")

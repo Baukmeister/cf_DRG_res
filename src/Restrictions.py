@@ -25,6 +25,6 @@ class Restriction:
             compliant_indices = [i for i in relevant_indices
                                  if not (self.itemA in event_sequences[i] and self.itemB in diagnoses[i])]
 
-        print(f"While enforcing restriction {len(compliant_indices)} out of {len(event_sequences)} were kept")
+        print(f"While enforcing restriction {len(compliant_indices)} out of {len(relevant_indices)} were kept")
 
         return compliant_indices
