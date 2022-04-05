@@ -16,11 +16,14 @@ if __name__ == "__main__":
                           # Fentanyl + Morphine
                           Restriction(RestrictionKind.DRUG_DRUG, "221744", "225154"),
                           Restriction(RestrictionKind.DRUG_DRUG, "225942", "225154"),
+
                           # Furosemide + Vancomycin
                           Restriction(RestrictionKind.DRUG_DRUG, "225942", "225798"),
+
                           # Furosemide + Fentanyl
                           Restriction(RestrictionKind.DRUG_DRUG, "225942", "221744"),
                           Restriction(RestrictionKind.DRUG_DRUG, "225942", "225942"),
+
                           # Furosemide + Morphine
                           Restriction(RestrictionKind.DRUG_DRUG, "225942", "225154"),
 
@@ -44,11 +47,24 @@ if __name__ == "__main__":
                           Restriction(RestrictionKind.DRUG_DRUG, "221749", "223262"),
                           Restriction(RestrictionKind.DRUG_DRUG, "221749", "223261"),
                           Restriction(RestrictionKind.DRUG_DRUG, "221749", "223259"),
-                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223258"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223258")
 
                       ] + [
-                          Restriction(RestrictionKind.DRUG_DISEASE, "225975", "V1582"),
-                          Restriction(RestrictionKind.DRUG_DISEASE, "4514", "V1582")
+                          # Metoprolol (Beta-Blocker) + Heart Block
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "4260"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "4263"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "4264"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42611"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42613"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42612"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42652"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42610"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42653"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "4266"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "4262"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "74686"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42651"),
+                          Restriction(RestrictionKind.DRUG_DISEASE, "225974", "42650")
                       ]
 
     DATA_OUT_FOLDER = "./processed_mimic_data"
