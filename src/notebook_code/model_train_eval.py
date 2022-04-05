@@ -53,6 +53,7 @@ def train_and_eval_models(
         seed=42
 ):
     tf.test.is_gpu_available()
+    restriction_modes = ["cf_restrictions", "no_cf_restrictions"]
 
     train_pos = pd.read_csv(f"{data_path}/train_pos.txt")
     train_neg = pd.read_csv(f"{data_path}/train_neg.txt")
@@ -60,13 +61,16 @@ def train_and_eval_models(
     train_pos['survival'] = [1 for i in range(train_pos.shape[0])]
     train_neg['survival'] = [0 for i in range(train_neg.shape[0])]
 
+
+
     output_folder = f"{results_path}/{datetime.now().strftime('%Y_%m_%d-%H-%M-%S')}-{model_to_explain}-dbs-{dynamic_batch_size}-fbs-{full_batch_size}-seed-{seed}"
 
     if not early_stopping:
         output_folder += "-no_early_stopping"
 
-    plot_folder = f"{output_folder}/plots"
     os.mkdir(output_folder)
+
+    plot_folder = f"{output_folder}/plots"
     os.mkdir(plot_folder)
 
     static_feature_names = [
@@ -79,7 +83,6 @@ def train_and_eval_models(
                                'first_icu_stay'
                            ] + tfidf_names
 
-    cf_result_df = pd.DataFrame(columns=["metric", "value"])
     prediction_result_df = pd.DataFrame(columns=["metric", "value"])
 
     train = pd.concat([train_pos, train_neg]).reset_index()[['survival', 'events'] + static_feature_names].dropna()
@@ -369,375 +372,384 @@ def train_and_eval_models(
     trans_results_delete.reset_index(inplace=True, drop=True)
     trans_results_delete_retrieve.reset_index(inplace=True, drop=True)
 
-    # enforce restrictions
-    compliant_delete_sequences_idx = list(trans_results_delete_retrieve.index)
-    compliant_delete_retrieve_sequences_idx = list(trans_results_delete_retrieve.index)
+    for restriction_mode in restriction_modes:
+        cf_result_df = pd.DataFrame(columns=["metric", "value"])
+        current_output_folder = f"{output_folder}/{restriction_mode}"
+        os.mkdir(current_output_folder)
 
-    for cf_restriction in cf_restrictions:
-        compliant_delete_sequences_idx = cf_restriction \
-            .get_compliant_sequence_indices(
-            list(trans_results_delete[0]),
-            list(validation_neg.diagnoses_text),
-            compliant_delete_sequences_idx
+        plot_folder = f"{current_output_folder}/plots"
+        os.mkdir(plot_folder)
+
+        # enforce restrictions
+        compliant_delete_sequences_idx = list(trans_results_delete_retrieve.index)
+        compliant_delete_retrieve_sequences_idx = list(trans_results_delete_retrieve.index)
+
+        if restriction_mode == "cf_restrictions":
+            for cf_restriction in cf_restrictions:
+                compliant_delete_sequences_idx = cf_restriction \
+                    .get_compliant_sequence_indices(
+                    list(trans_results_delete[0]),
+                    list(validation_neg.diagnoses_text),
+                    compliant_delete_sequences_idx
+                )
+
+                compliant_delete_retrieve_sequences_idx = cf_restriction \
+                    .get_compliant_sequence_indices(
+                    list(trans_results_delete_retrieve[0]),
+                    list(validation_neg.diagnoses_text),
+                    compliant_delete_retrieve_sequences_idx
+                )
+
+        nn_model = NearestNeighbors(n_neighbors=1, metric='hamming')
+        target_label = 1
+        X_target_label = X_train_padded[y_train == target_label]
+
+        nn_model.fit(X_target_label)
+
+        closest = nn_model.kneighbors(X_pred_negative, return_distance=False)
+        trans_results_nn = X_target_label[closest[:, 0]]
+
+        X_cf_one_nn = trans_results_nn
+
+        X_cf_delete = tokenizer.texts_to_sequences(trans_results_delete[0][compliant_delete_sequences_idx])
+        X_cf_delete_retrieve = tokenizer.texts_to_sequences(
+            trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx])
+
+        X_cf_delete_padded = sequence.pad_sequences(X_cf_delete, maxlen=max_seq_length, padding='post')
+        X_cf_delete_retrieve_padded = sequence.pad_sequences(X_cf_delete_retrieve, maxlen=max_seq_length, padding='post')
+
+        trans_event_delete = tokenizer.sequences_to_texts(X_cf_delete_padded)
+        trans_event_delete_retrieve = tokenizer.sequences_to_texts(X_cf_delete_retrieve_padded)
+        trans_event_one_nn = tokenizer.sequences_to_texts(X_cf_one_nn)
+
+        test_size_delete = len(compliant_delete_sequences_idx)
+        test_size_delete_retrieve = len(compliant_delete_retrieve_sequences_idx)
+        test_size = X_val_neg_static.shape[0]
+
+        if model_to_explain == 'full_lstm':
+            fraction_success = np.sum(model.predict(
+                [X_cf_delete_padded, X_val_neg_static.loc[compliant_delete_sequences_idx]]) > 0.5) / test_size_delete
+        elif model_to_explain == "rf":
+            fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
+        else:
+            fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size_delete
+        print(round(fraction_success, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'frac_delete',
+                'value': fraction_success
+            },
+            ignore_index=True
         )
 
-        compliant_delete_retrieve_sequences_idx = cf_restriction \
-            .get_compliant_sequence_indices(
-            list(trans_results_delete_retrieve[0]),
-            list(validation_neg.diagnoses_text),
-            compliant_delete_retrieve_sequences_idx
+        if model_to_explain == 'full_lstm':
+            fraction_success = np.sum(
+                model.predict([X_cf_delete_retrieve_padded, X_val_neg_static.loc[
+                    compliant_delete_retrieve_sequences_idx]]) > 0.5) / test_size_delete_retrieve
+        elif model_to_explain == "rf":
+            fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
+        else:
+            fraction_success = np.sum(model.predict(X_cf_delete_retrieve_padded) > 0.5) / test_size_delete_retrieve
+        print(round(fraction_success, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'frac_delete_retrieve',
+                'value': fraction_success,
+            },
+            ignore_index=True,
         )
 
-    nn_model = NearestNeighbors(n_neighbors=1, metric='hamming')
-    target_label = 1
-    X_target_label = X_train_padded[y_train == target_label]
-
-    nn_model.fit(X_target_label)
-
-    closest = nn_model.kneighbors(X_pred_negative, return_distance=False)
-    trans_results_nn = X_target_label[closest[:, 0]]
-
-    X_cf_one_nn = trans_results_nn
-
-    X_cf_delete = tokenizer.texts_to_sequences(trans_results_delete[0][compliant_delete_sequences_idx])
-    X_cf_delete_retrieve = tokenizer.texts_to_sequences(
-        trans_results_delete_retrieve[0][compliant_delete_retrieve_sequences_idx])
-
-    X_cf_delete_padded = sequence.pad_sequences(X_cf_delete, maxlen=max_seq_length, padding='post')
-    X_cf_delete_retrieve_padded = sequence.pad_sequences(X_cf_delete_retrieve, maxlen=max_seq_length, padding='post')
-
-    trans_event_delete = tokenizer.sequences_to_texts(X_cf_delete_padded)
-    trans_event_delete_retrieve = tokenizer.sequences_to_texts(X_cf_delete_retrieve_padded)
-    trans_event_one_nn = tokenizer.sequences_to_texts(X_cf_one_nn)
-
-    test_size_delete = len(compliant_delete_sequences_idx)
-    test_size_delete_retrieve = len(compliant_delete_retrieve_sequences_idx)
-    test_size = X_val_neg_static.shape[0]
-
-    if model_to_explain == 'full_lstm':
-        fraction_success = np.sum(model.predict(
-            [X_cf_delete_padded, X_val_neg_static.loc[compliant_delete_sequences_idx]]) > 0.5) / test_size_delete
-    elif model_to_explain == "rf":
-        fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
-    else:
-        fraction_success = np.sum(model.predict(X_cf_delete_padded) > 0.5) / test_size_delete
-    print(round(fraction_success, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'frac_delete',
-            'value': fraction_success
-        },
-        ignore_index=True
-    )
-
-    if model_to_explain == 'full_lstm':
-        fraction_success = np.sum(
-            model.predict([X_cf_delete_retrieve_padded, X_val_neg_static.loc[
-                compliant_delete_retrieve_sequences_idx]]) > 0.5) / test_size_delete_retrieve
-    elif model_to_explain == "rf":
-        fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
-    else:
-        fraction_success = np.sum(model.predict(X_cf_delete_retrieve_padded) > 0.5) / test_size_delete_retrieve
-    print(round(fraction_success, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'frac_delete_retrieve',
-            'value': fraction_success,
-        },
-        ignore_index=True,
-    )
-
-    if model_to_explain == 'full_lstm':
-        fraction_success = np.sum(model.predict([X_cf_one_nn, X_pred_negative_static]) > 0.5) / test_size
-    elif model_to_explain == "rf":
-        fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
-    else:
-        fraction_success = np.sum(model.predict(X_cf_one_nn) > 0.5) / test_size
-    print(round(fraction_success, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'frac_one_nn',
-            'value': fraction_success
-        },
-        ignore_index=True
-    )
-
-    clf = LocalOutlierFactor(n_neighbors=20, novelty=True, contamination=0.1)
-    clf.fit(X_train_padded)
-
-    y_pred_val = clf.predict(X_val_padded)
-
-    n_error_val = y_pred_val[y_pred_val == -1].size
-
-    validation_size = X_val_padded.shape[0]
-    outlier_score_val = n_error_val / validation_size
-
-    y_pred_test = clf.predict(X_cf_delete_padded)
-    n_error_test = y_pred_test[y_pred_test == -1].size
-
-    outlier_score_delete = n_error_test / test_size
-    print(round(outlier_score_delete, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'lof_delete',
-            'value': outlier_score_delete
-        },
-        ignore_index=True
-    )
-    y_pred_test2 = clf.predict(X_cf_delete_retrieve_padded)
-    n_error_test2 = y_pred_test2[y_pred_test2 == -1].size
-
-    outlier_score_delete_retrieve = n_error_test2 / test_size
-    print(round(outlier_score_delete_retrieve, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'lof_delete_retrieve',
-            'value': outlier_score_delete_retrieve
-        },
-        ignore_index=True
-    )
-
-    y_pred_test3 = clf.predict(X_cf_one_nn)
-    n_error_test3 = y_pred_test3[y_pred_test3 == -1].size
-
-    outlier_score_one_nn = n_error_test3 / test_size
-    print(round(outlier_score_one_nn, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'lof_one_nn',
-            'value': outlier_score_one_nn
-        },
-        ignore_index=True
-    )
-
-    chencherry = SmoothingFunction()
-
-    def get_pairwise_bleu(original, transformed):
-        results = [sentence_bleu(
-            references=[pair[0].split()],
-            hypothesis=pair[1].split(),
-            weights=[0.25, 0.25, 0.25, 0.25],
-            smoothing_function=chencherry.method1)
-            for pair in zip(original, transformed)]
-
-        return results
-
-    pairwise_bleu_delete = get_pairwise_bleu(
-        [original_event_sequences[i] for i in compliant_delete_sequences_idx],
-        trans_event_delete
-    )
-    avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
-    print(round(avg_bleu_delete, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'avg_bleu_delete',
-            'value': avg_bleu_delete
-        },
-        ignore_index=True
-    )
-
-    pairwise_bleu_delete_retrieve = get_pairwise_bleu(
-        [original_event_sequences[i] for i in compliant_delete_retrieve_sequences_idx],
-        trans_event_delete_retrieve
-    )
-    avg_bleu_delete_retrieve = sum(pairwise_bleu_delete_retrieve) / test_size
-    print(round(avg_bleu_delete_retrieve, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'avg_bleu_delete_retrieve',
-            'value': avg_bleu_delete_retrieve
-        },
-        ignore_index=True
-    )
-
-    pariwise_bleu_one_nn = get_pairwise_bleu(original_event_sequences, trans_event_one_nn)
-    avg_bleu_one_nn = sum(pariwise_bleu_one_nn) / test_size
-    print(round(avg_bleu_one_nn, 4))
-
-    cf_result_df = cf_result_df.append(
-        {
-            'metric': 'avg_bleu_one_nn',
-            'value': avg_bleu_one_nn
-        },
-        ignore_index=True
-    )
-
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 4))
-
-    plt.sca(ax[0])
-    plt.title('DeleteOnly, BLUE score')
-    plt.hist(pairwise_bleu_delete, density=True, bins=30)
-
-    plt.sca(ax[1])
-    plt.title('DeleteAndRetrieve, BLUE score')
-    plt.hist(pairwise_bleu_delete_retrieve, density=True, bins=30)
-
-    plt.sca(ax[2])
-    plt.title('1-NN, BLUE score')
-    plt.hist(pariwise_bleu_one_nn, density=True, bins=30)
-
-    plt.savefig(f"{plot_folder}/histograms_{model_to_explain}.png")
-
-    original_counts = pd.DataFrame(columns=['total', 'drug', 'procedure'])
-
-    def get_counts_table(event_sequences):
-        temp_list = list()
-        for seq in event_sequences:
-            splitted = seq.split()
-            total = len(splitted)
-
-            drug = len([x for x in splitted if int(x) >= 220000])
-            procedure = total - drug
-
-            temp_list.append({'total': total, 'drug': drug, 'procedure': procedure})
-
-        return pd.DataFrame(temp_list)
-
-    df_original_counts = get_counts_table(original_event_sequences)
-
-    df_original_counts.head()
-
-    trans_counts_delete = get_counts_table(trans_event_delete)
-    trans_counts_delete_retrieve = get_counts_table(trans_event_delete_retrieve)
-    trans_counts_one_nn = get_counts_table(trans_event_one_nn)
-
-    substracted_delete = trans_counts_delete.subtract(df_original_counts)
-    substracted_delete_retrieve = trans_counts_delete_retrieve.subtract(df_original_counts)
-    substracted_one_nn = trans_counts_one_nn.subtract(df_original_counts)
-
-    fig, ax = plt.subplots(nrows=3, ncols=3, figsize=(16, 12))
-
-    plt.sca(ax[0, 0])
-    plt.title('DeleteOnly, total difference')
-    plt.hist(substracted_delete['total'], density=True, bins=30)
-
-    plt.sca(ax[0, 1])
-    plt.title('DeleteOnly, drug event difference')
-    plt.hist(substracted_delete['drug'], density=True, bins=30)
-
-    plt.sca(ax[0, 2])
-    plt.title('DeleteOnly, procedure difference')
-    plt.hist(substracted_delete['procedure'], density=True, bins=12)
-
-    plt.sca(ax[1, 0])
-    plt.title('DeleteAndRetrieve, total difference')
-    plt.hist(substracted_delete_retrieve['total'], density=True, bins=30)
-
-    plt.sca(ax[1, 1])
-    plt.title('DeleteAndRetrieve, drug event difference')
-    plt.hist(substracted_delete_retrieve['drug'], density=True, bins=30)
-
-    plt.sca(ax[1, 2])
-    plt.title('DeleteAndRetrieve, procedure difference')
-    plt.hist(substracted_delete_retrieve['procedure'], density=True, bins=12)
-
-    plt.sca(ax[2, 0])
-    plt.title('1-NN, total difference')
-    plt.hist(substracted_one_nn['total'], density=True, bins=30)
-
-    plt.sca(ax[2, 1])
-    plt.title('1-NN, drug event difference')
-    plt.hist(substracted_one_nn['drug'], density=True, bins=30)
-
-    plt.sca(ax[2, 2])
-    plt.title('1-NN, procedure difference')
-    plt.hist(substracted_one_nn['procedure'], density=True, bins=12)
-
-    plt.savefig(f"{plot_folder}/difference_plot-{model_to_explain}.png")
-
-    conn = psycopg2.connect(
-        database="mimic",
-        user='postgres',
-        password=postgres_pw,
-        host="127.0.0.1",
-        port="5432",
-        options=f'-c search_path=mimiciii')
-
-    itemid_to_name = pd.read_sql(
-        """
-        SELECT itemid, abbreviation, label
-        FROM d_items;
-        """, conn)
-
-    itemid_to_name = itemid_to_name[itemid_to_name['itemid'] >= 220000]
-
-    itemid_to_name2 = pd.read_sql(
-        """
-        SELECT icd9_code, short_title, long_title
-        FROM d_icd_procedures;
-        """, conn)
-
-    itemid_to_name2.head()
-
-    itemid_to_name2 = itemid_to_name2.rename(
-        columns={'icd9_code': 'itemid', 'short_title': 'abbreviation', 'long_title': 'label'}
-    )
-
-    itemid_to_name_concat = pd.concat([itemid_to_name, itemid_to_name2])
-
-    itemid_to_name_concat['label'] = itemid_to_name_concat['label'].astype('str')
-    itemid_to_name_concat['itemid'] = itemid_to_name_concat['itemid'].astype('int')
-
-    def code_to_name(event_sequence):
-        code_sequence = [int(event) for event in event_sequence.split()]
-
-        temp_list = list()
-        for code in code_sequence:
-            event_name = itemid_to_name_concat[itemid_to_name_concat['itemid'] == code]['label'].item()
-            temp_list.append(event_name)
-
-        return temp_list
-
-    ## EXPORT
-    cf_result_df.to_csv(f"{output_folder}/CF_metrics.csv")
-    prediction_result_df.to_csv(f"{output_folder}/prediction_metrics.csv")
-
-    for sample_id in sequences_to_plot:
-        try:
-            print(f"Plotting sequence with ID: {sample_id} ...")
-
-            code_to_name(original_event_sequences[sample_id])
-
-            plot_sequence(
-                code_to_name(original_event_sequences[sample_id]),
-                title=f"ID_{sample_id}-{model_to_explain}-Original_Sequence",
-                output_folder=plot_folder
-            )
-
-            if sample_id in compliant_delete_sequences_idx:
-                relevant_id = [k for k, v in enumerate(compliant_delete_sequences_idx) if v == sample_id][0]
-                code_to_name(trans_event_delete[relevant_id])
+        if model_to_explain == 'full_lstm':
+            fraction_success = np.sum(model.predict([X_cf_one_nn, X_pred_negative_static]) > 0.5) / test_size
+        elif model_to_explain == "rf":
+            fraction_success = np.sum(model.predict(X_val_neg_static) > 0.5) / test_size
+        else:
+            fraction_success = np.sum(model.predict(X_cf_one_nn) > 0.5) / test_size
+        print(round(fraction_success, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'frac_one_nn',
+                'value': fraction_success
+            },
+            ignore_index=True
+        )
+
+        clf = LocalOutlierFactor(n_neighbors=20, novelty=True, contamination=0.1)
+        clf.fit(X_train_padded)
+
+        y_pred_val = clf.predict(X_val_padded)
+
+        n_error_val = y_pred_val[y_pred_val == -1].size
+
+        validation_size = X_val_padded.shape[0]
+        outlier_score_val = n_error_val / validation_size
+
+        y_pred_test = clf.predict(X_cf_delete_padded)
+        n_error_test = y_pred_test[y_pred_test == -1].size
+
+        outlier_score_delete = n_error_test / test_size
+        print(round(outlier_score_delete, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'lof_delete',
+                'value': outlier_score_delete
+            },
+            ignore_index=True
+        )
+        y_pred_test2 = clf.predict(X_cf_delete_retrieve_padded)
+        n_error_test2 = y_pred_test2[y_pred_test2 == -1].size
+
+        outlier_score_delete_retrieve = n_error_test2 / test_size
+        print(round(outlier_score_delete_retrieve, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'lof_delete_retrieve',
+                'value': outlier_score_delete_retrieve
+            },
+            ignore_index=True
+        )
+
+        y_pred_test3 = clf.predict(X_cf_one_nn)
+        n_error_test3 = y_pred_test3[y_pred_test3 == -1].size
+
+        outlier_score_one_nn = n_error_test3 / test_size
+        print(round(outlier_score_one_nn, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'lof_one_nn',
+                'value': outlier_score_one_nn
+            },
+            ignore_index=True
+        )
+
+        chencherry = SmoothingFunction()
+
+        def get_pairwise_bleu(original, transformed):
+            results = [sentence_bleu(
+                references=[pair[0].split()],
+                hypothesis=pair[1].split(),
+                weights=[0.25, 0.25, 0.25, 0.25],
+                smoothing_function=chencherry.method1)
+                for pair in zip(original, transformed)]
+
+            return results
+
+        pairwise_bleu_delete = get_pairwise_bleu(
+            [original_event_sequences[i] for i in compliant_delete_sequences_idx],
+            trans_event_delete
+        )
+        avg_bleu_delete = sum(pairwise_bleu_delete) / test_size
+        print(round(avg_bleu_delete, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'avg_bleu_delete',
+                'value': avg_bleu_delete
+            },
+            ignore_index=True
+        )
+
+        pairwise_bleu_delete_retrieve = get_pairwise_bleu(
+            [original_event_sequences[i] for i in compliant_delete_retrieve_sequences_idx],
+            trans_event_delete_retrieve
+        )
+        avg_bleu_delete_retrieve = sum(pairwise_bleu_delete_retrieve) / test_size
+        print(round(avg_bleu_delete_retrieve, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'avg_bleu_delete_retrieve',
+                'value': avg_bleu_delete_retrieve
+            },
+            ignore_index=True
+        )
+
+        pariwise_bleu_one_nn = get_pairwise_bleu(original_event_sequences, trans_event_one_nn)
+        avg_bleu_one_nn = sum(pariwise_bleu_one_nn) / test_size
+        print(round(avg_bleu_one_nn, 4))
+
+        cf_result_df = cf_result_df.append(
+            {
+                'metric': 'avg_bleu_one_nn',
+                'value': avg_bleu_one_nn
+            },
+            ignore_index=True
+        )
+
+        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 4))
+
+        plt.sca(ax[0])
+        plt.title('DeleteOnly, BLUE score')
+        plt.hist(pairwise_bleu_delete, density=True, bins=30)
+
+        plt.sca(ax[1])
+        plt.title('DeleteAndRetrieve, BLUE score')
+        plt.hist(pairwise_bleu_delete_retrieve, density=True, bins=30)
+
+        plt.sca(ax[2])
+        plt.title('1-NN, BLUE score')
+        plt.hist(pariwise_bleu_one_nn, density=True, bins=30)
+
+        plt.savefig(f"{plot_folder}/histograms_{model_to_explain}.png")
+
+        original_counts = pd.DataFrame(columns=['total', 'drug', 'procedure'])
+
+        def get_counts_table(event_sequences):
+            temp_list = list()
+            for seq in event_sequences:
+                splitted = seq.split()
+                total = len(splitted)
+
+                drug = len([x for x in splitted if int(x) >= 220000])
+                procedure = total - drug
+
+                temp_list.append({'total': total, 'drug': drug, 'procedure': procedure})
+
+            return pd.DataFrame(temp_list)
+
+        df_original_counts = get_counts_table(original_event_sequences)
+
+        df_original_counts.head()
+
+        trans_counts_delete = get_counts_table(trans_event_delete)
+        trans_counts_delete_retrieve = get_counts_table(trans_event_delete_retrieve)
+        trans_counts_one_nn = get_counts_table(trans_event_one_nn)
+
+        substracted_delete = trans_counts_delete.subtract(df_original_counts)
+        substracted_delete_retrieve = trans_counts_delete_retrieve.subtract(df_original_counts)
+        substracted_one_nn = trans_counts_one_nn.subtract(df_original_counts)
+
+        fig, ax = plt.subplots(nrows=3, ncols=3, figsize=(16, 12))
+
+        plt.sca(ax[0, 0])
+        plt.title('DeleteOnly, total difference')
+        plt.hist(substracted_delete['total'], density=True, bins=30)
+
+        plt.sca(ax[0, 1])
+        plt.title('DeleteOnly, drug event difference')
+        plt.hist(substracted_delete['drug'], density=True, bins=30)
+
+        plt.sca(ax[0, 2])
+        plt.title('DeleteOnly, procedure difference')
+        plt.hist(substracted_delete['procedure'], density=True, bins=12)
+
+        plt.sca(ax[1, 0])
+        plt.title('DeleteAndRetrieve, total difference')
+        plt.hist(substracted_delete_retrieve['total'], density=True, bins=30)
+
+        plt.sca(ax[1, 1])
+        plt.title('DeleteAndRetrieve, drug event difference')
+        plt.hist(substracted_delete_retrieve['drug'], density=True, bins=30)
+
+        plt.sca(ax[1, 2])
+        plt.title('DeleteAndRetrieve, procedure difference')
+        plt.hist(substracted_delete_retrieve['procedure'], density=True, bins=12)
+
+        plt.sca(ax[2, 0])
+        plt.title('1-NN, total difference')
+        plt.hist(substracted_one_nn['total'], density=True, bins=30)
+
+        plt.sca(ax[2, 1])
+        plt.title('1-NN, drug event difference')
+        plt.hist(substracted_one_nn['drug'], density=True, bins=30)
+
+        plt.sca(ax[2, 2])
+        plt.title('1-NN, procedure difference')
+        plt.hist(substracted_one_nn['procedure'], density=True, bins=12)
+
+        plt.savefig(f"{plot_folder}/difference_plot-{model_to_explain}.png")
+
+        conn = psycopg2.connect(
+            database="mimic",
+            user='postgres',
+            password=postgres_pw,
+            host="127.0.0.1",
+            port="5432",
+            options=f'-c search_path=mimiciii')
+
+        itemid_to_name = pd.read_sql(
+            """
+            SELECT itemid, abbreviation, label
+            FROM d_items;
+            """, conn)
+
+        itemid_to_name = itemid_to_name[itemid_to_name['itemid'] >= 220000]
+
+        itemid_to_name2 = pd.read_sql(
+            """
+            SELECT icd9_code, short_title, long_title
+            FROM d_icd_procedures;
+            """, conn)
+
+        itemid_to_name2.head()
+
+        itemid_to_name2 = itemid_to_name2.rename(
+            columns={'icd9_code': 'itemid', 'short_title': 'abbreviation', 'long_title': 'label'}
+        )
+
+        itemid_to_name_concat = pd.concat([itemid_to_name, itemid_to_name2])
+
+        itemid_to_name_concat['label'] = itemid_to_name_concat['label'].astype('str')
+        itemid_to_name_concat['itemid'] = itemid_to_name_concat['itemid'].astype('int')
+
+        def code_to_name(event_sequence):
+            code_sequence = [int(event) for event in event_sequence.split()]
+
+            temp_list = list()
+            for code in code_sequence:
+                event_name = itemid_to_name_concat[itemid_to_name_concat['itemid'] == code]['label'].item()
+                temp_list.append(event_name)
+
+            return temp_list
+
+        ## EXPORT
+        cf_result_df.to_csv(f"{current_output_folder}/CF_metrics.csv")
+        prediction_result_df.to_csv(f"{current_output_folder}/prediction_metrics.csv")
+
+        for sample_id in sequences_to_plot:
+            try:
+                print(f"Plotting sequence with ID: {sample_id} ...")
+
+                code_to_name(original_event_sequences[sample_id])
 
                 plot_sequence(
-                    code_to_name(trans_event_delete[sample_id]),
-                    title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
+                    code_to_name(original_event_sequences[sample_id]),
+                    title=f"ID_{sample_id}-{model_to_explain}-Original_Sequence",
                     output_folder=plot_folder
                 )
 
-            if sample_id in compliant_delete_retrieve_sequences_idx:
-                relevant_id = [k for k, v in enumerate(compliant_delete_retrieve_sequences_idx) if v == sample_id][0]
-                code_to_name(trans_event_delete_retrieve[relevant_id])
+                if sample_id in compliant_delete_sequences_idx:
+                    relevant_id = [k for k, v in enumerate(compliant_delete_sequences_idx) if v == sample_id][0]
+                    code_to_name(trans_event_delete[relevant_id])
+
+                    plot_sequence(
+                        code_to_name(trans_event_delete[sample_id]),
+                        title=f"ID_{sample_id}-{model_to_explain}-DRG-DELETE_Sequence",
+                        output_folder=plot_folder
+                    )
+
+                if sample_id in compliant_delete_retrieve_sequences_idx:
+                    relevant_id = [k for k, v in enumerate(compliant_delete_retrieve_sequences_idx) if v == sample_id][0]
+                    code_to_name(trans_event_delete_retrieve[relevant_id])
+
+                    plot_sequence(
+                        code_to_name(trans_event_delete_retrieve[relevant_id]),
+                        title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
+                        output_folder=plot_folder
+                    )
+
+                code_to_name(trans_event_one_nn[sample_id])
 
                 plot_sequence(
-                    code_to_name(trans_event_delete_retrieve[relevant_id]),
-                    title=f"ID_{sample_id}-{model_to_explain}-DRG_DELETE-RETRIEVE_Sequence",
+                    code_to_name(trans_event_one_nn[sample_id]),
+                    title=f"ID_{sample_id}-{model_to_explain}-1-NN_Sequence",
                     output_folder=plot_folder
                 )
-
-            code_to_name(trans_event_one_nn[sample_id])
-
-            plot_sequence(
-                code_to_name(trans_event_one_nn[sample_id]),
-                title=f"ID_{sample_id}-{model_to_explain}-1-NN_Sequence",
-                output_folder=plot_folder
-            )
-        except Exception as e:
-            print(f"Error for sample {sample_id}: {e}")
+            except Exception as e:
+                print(f"Error for sample {sample_id}: {e}")

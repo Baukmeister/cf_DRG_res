@@ -10,10 +10,42 @@ if __name__ == "__main__":
     NUM_TFIDF_FEATURES = 300
     RNG_SEED = 100
     TFIDF_NAMES = [f"diagnoses_tfidf_{pos}" for pos in range(NUM_TFIDF_FEATURES)]
-    RUN_PREPROCESSING = True
+    RUN_PREPROCESSING = False
     TRAIN_AND_EVAL_MODELS = True
     CF_RESTRICTIONS = [
-                          Restriction(RestrictionKind.DRUG_DRUG, "225975", "3422")
+                          # Fentanyl + Morphine
+                          Restriction(RestrictionKind.DRUG_DRUG, "221744", "225154"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "225154"),
+                          # Furosemide + Vancomycin
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "225798"),
+                          # Furosemide + Fentanyl
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "221744"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "225942"),
+                          # Furosemide + Morphine
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "225154"),
+
+                          # Fentanyl + Propofol
+                          Restriction(RestrictionKind.DRUG_DRUG, "221744", "222168"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "225942", "222168"),
+                          # Morphine + Propofol
+                          Restriction(RestrictionKind.DRUG_DRUG, "225154", "222168"),
+
+                          # Norephinephrine + Insulin
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223257"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223260"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223262"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223261"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223259"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221906", "223258"),
+
+                          # Phenylephrine + Insulin
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223257"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223260"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223262"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223261"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223259"),
+                          Restriction(RestrictionKind.DRUG_DRUG, "221749", "223258"),
+
                       ] + [
                           Restriction(RestrictionKind.DRUG_DISEASE, "225975", "V1582"),
                           Restriction(RestrictionKind.DRUG_DISEASE, "4514", "V1582")
@@ -27,7 +59,7 @@ if __name__ == "__main__":
         'rf',
         '1-NN'
     ]
-    MODELS_TO_EXPLAIN = 'full_lstm'
+    MODELS_TO_EXPLAIN = 'rf'
     RESULTS_PATH = "./results"
 
     personal_config = json.load(open("./personal_config.json"))
@@ -49,7 +81,7 @@ if __name__ == "__main__":
     # NOTEBOOK 2
     if TRAIN_AND_EVAL_MODELS:
         print("Started model training and evaluation step...")
-        for batch_size in [4,8,16,32,64,128,256,512,1024]:
+        for batch_size in [4, 8, 16, 32, 64, 128, 256, 512, 1024]:
             train_and_eval_models(
                 postgres_pw=postgres_pw,
                 data_path=DATA_OUT_FOLDER,
@@ -63,7 +95,7 @@ if __name__ == "__main__":
                 dynamic_batch_size=batch_size,
                 epochs=50,
                 cf_restrictions=CF_RESTRICTIONS,
-                early_stopping=False,
+                early_stopping=True,
                 seed=RNG_SEED
             )
         print("Model training and evaluation step done!")
