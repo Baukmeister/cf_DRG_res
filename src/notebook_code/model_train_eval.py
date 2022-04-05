@@ -316,7 +316,6 @@ def train_and_eval_models(
 
     plot_model(full_lstm_model, f"{plot_folder}/full_lstm_model.png")
 
-    callbacks = [EarlyStopping(monitor='val_loss', patience=3)]
 
     full_lstm_model.summary()
 
@@ -327,7 +326,7 @@ def train_and_eval_models(
             epochs=epochs,
             batch_size=full_batch_size,
             validation_data=([X_val_padded, X_val_static], y_val),
-            callbacks=callbacks
+            callbacks=[]
         )
 
         plot_graphs(full_lstm_hist, "accuracy", 'full_lstm')

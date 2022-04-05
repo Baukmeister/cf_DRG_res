@@ -8,7 +8,7 @@ from src.notebook_code.model_train_eval import train_and_eval_models
 if __name__ == "__main__":
     # CONFIG
     NUM_TFIDF_FEATURES = 300
-    RNG_SEED = 100
+    RNG_SEED = 102
     TFIDF_NAMES = [f"diagnoses_tfidf_{pos}" for pos in range(NUM_TFIDF_FEATURES)]
     RUN_PREPROCESSING = False
     TRAIN_AND_EVAL_MODELS = True
@@ -109,7 +109,7 @@ if __name__ == "__main__":
                 tfidf_names=TFIDF_NAMES,
                 full_batch_size=batch_size,
                 dynamic_batch_size=batch_size,
-                epochs=50,
+                epochs=40,
                 cf_restrictions=CF_RESTRICTIONS,
                 early_stopping=True,
                 seed=RNG_SEED
