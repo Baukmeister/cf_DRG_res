@@ -323,7 +323,7 @@ def preprocess_data(
 
     np.random.seed(seed)
 
-    validation_neg = neg_data.sample(n=200, random_state=3)
+    validation_neg = neg_data.sample(n=200, random_state=seed)
     train_neg = neg_data.drop(validation_neg.index)
 
     print("Exporting the data ...")
@@ -331,7 +331,7 @@ def preprocess_data(
     train_neg.to_csv(path_or_buf=f'./{data_path}/train_neg.txt', index=False)
     validation_neg.to_csv(path_or_buf=f'./{data_path}/validation_neg.txt', index=False)
 
-    validation_pos = pos_data.sample(n=200, random_state=3)
+    validation_pos = pos_data.sample(n=200, random_state=seed)
     train_pos = pos_data.drop(validation_pos.index)
 
     train_pos.to_csv(path_or_buf=f'./{data_path}/train_pos.txt', index=False)
