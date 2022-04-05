@@ -316,6 +316,8 @@ def train_and_eval_models(
 
     plot_model(full_lstm_model, f"{plot_folder}/full_lstm_model.png")
 
+    callbacks = [EarlyStopping(monitor='val_loss', patience=3)]
+
     full_lstm_model.summary()
 
     if 'full_lstm' in models_to_train:

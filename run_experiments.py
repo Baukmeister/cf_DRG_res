@@ -75,7 +75,7 @@ if __name__ == "__main__":
         'rf',
         '1-NN'
     ]
-    MODELS_TO_EXPLAIN = 'rf'
+    MODELS_TO_EXPLAIN = 'full_lstm'
     RESULTS_PATH = "./results"
 
     personal_config = json.load(open("./personal_config.json"))
