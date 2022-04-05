@@ -10,7 +10,7 @@ if __name__ == "__main__":
     NUM_TFIDF_FEATURES = 300
     RNG_SEED = 102
     TFIDF_NAMES = [f"diagnoses_tfidf_{pos}" for pos in range(NUM_TFIDF_FEATURES)]
-    RUN_PREPROCESSING = False
+    RUN_PREPROCESSING = True
     TRAIN_AND_EVAL_MODELS = True
     CF_RESTRICTIONS = [
                           # Fentanyl + Morphine
