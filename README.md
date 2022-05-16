@@ -1,6 +1,7 @@
 # Comparison of approaches for predicting ICU survival of patients in the MIMIC-III clinical database and evaluation of different methods for producing counterfactual samples.
 
 This repository is forked from, and based on [this repository](https://github.com/zhendong3wang/counterfactuals-for-event-sequences)
+
 Please refer to the original publication:
 ```
 @inproceedings{wang_counterfactual_2021,
